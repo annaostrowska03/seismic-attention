@@ -1,0 +1,12 @@
+[project]
+name = "seismic-attention"
+version = "0.1.0"
+description = "Live monitoring of online reaction to M4.5+ earthquakes with media-coverage prediction."
+requires-python = ">=3.11"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
