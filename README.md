@@ -44,6 +44,16 @@ docker compose exec spark-master /opt/spark/bin/spark-submit /opt/app/scripts/ed
 
 The Spark containers run Python 3.8, so `src/seismic_attention/features.py` must work on 3.8.
 
+## Files
+
+- `nifi/flows/usgs.json` - NiFi flow: USGS feed every minute to Kafka `usgs` and HDFS `/raw/usgs`
+- `scripts/backfill_usgs.py` - downloads the USGS catalogue month by month
+- `scripts/backfill_gdelt.py` - downloads GDELT GKG files and keeps earthquake articles
+- `scripts/load_history.py` - loads the downloaded history to HDFS and Hive
+- `scripts/eda_history.py` - exploratory analysis: media coverage of earthquakes on the history
+- `src/seismic_attention/features.py` - USGS event features
+- `tests/` - pytest tests
+
 ## Team
 
 Anna Ostrowska, Gabriela Majstrak, Norbert Frydrysiak, Michał Kukla
