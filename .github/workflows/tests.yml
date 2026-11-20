@@ -1,0 +1,58 @@
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      # Spark tests run in local mode on the runner
+      SPARK_LOCAL_IP: 127.0.0.1
+      PYSPARK_PYTHON: python
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      # Spark 3.5 runs on Java 8/11/17; the Docker images use Java 11, 17 is fine for tests
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run tests
+        run: |
+          mkdir -p reports
+          python -m pytest -v -rs --junitxml=reports/junit.xml
+
+      # The Spark tests skip themselves without Java; in CI every test has to run
+      - name: Fail if any test was skipped
+        run: |
+          python - <<'EOF'
+          import sys
+          import xml.etree.ElementTree as ET
+          root = ET.parse("reports/junit.xml").getroot()
+          suites = [root] if root.tag == "testsuite" else root.findall("testsuite")
+          tests = sum(int(s.get("tests", 0)) for s in suites)
+          skipped = sum(int(s.get("skipped", 0)) for s in suites)
+          print(f"tests: {tests}, skipped: {skipped}")
+          sys.exit(1 if skipped else 0)
+          EOF
+
+      - name: Upload test report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: junit-report
+          path: reports/junit.xml
