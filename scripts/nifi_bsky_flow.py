@@ -184,7 +184,7 @@ def delete():
     call("PUT", f"/flow/process-groups/{gid}", json={"id": gid, "state": "STOPPED"})
     for c in call("GET", f"/flow/process-groups/{gid}")["processGroupFlow"]["flow"]["connections"]:
         call("POST", f"/flowfile-queues/{c['id']}/drop-requests")
-    time.sleep(2)
+    time.sleep(2)   # drop requests run asynchronously; NiFi refuses to delete non-empty queues
     version = call("GET", f"/process-groups/{gid}")["revision"]["version"]
     call("DELETE", f"/process-groups/{gid}?version={version}")
     print(f"deleted {GROUP_NAME}")

@@ -10,7 +10,19 @@
     "tsunami",
     "震度",
     "津波",
-    "緊急地震速報"
+    "緊急地震速報",
+    "temblor",
+    "gempa",
+    "lindol",
+    "지진",
+    "erdbeben",
+    "séisme",
+    "σεισμός",
+    "землетрясение",
+    "زلزله",
+    "زلزال",
+    "aftershock",
+    "trzęsienie ziemi"
   ],
   "exclude_terms": [
     "quake champions",

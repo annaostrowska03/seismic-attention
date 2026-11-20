@@ -101,6 +101,7 @@ class BlueskyClient:
             self._respect_rate_limit(r)
             if r.status_code == 200:
                 return r.json()
+            # an expired access token can also come back as HTTP 400 with error "ExpiredToken"
             if r.status_code == 401 or "ExpiredToken" in r.text:
                 self.login()
                 continue

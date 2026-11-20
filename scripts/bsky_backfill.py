@@ -22,7 +22,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))  # run without installing the package
 
 from seismic_attention.ingest.bluesky_api import BlueskyClient  # noqa: E402
-from seismic_attention.ingest.bluesky_backfill import run_backfill  # noqa: E402
+from seismic_attention.ingest.bluesky_backfill import pending_windows, run_backfill  # noqa: E402
 from seismic_attention.ingest.keywords import load_keywords  # noqa: E402
 
 RAW_DIR = ROOT / "data" / "raw" / "bsky"
@@ -39,16 +39,27 @@ def main() -> None:
     ap.add_argument("--start", required=True, help="YYYY-MM-DD (UTC, inclusive)")
     ap.add_argument("--end", required=True, help="YYYY-MM-DD (UTC, exclusive)")
     ap.add_argument("--window-hours", type=int, default=1)
+    ap.add_argument("--dry-run", action="store_true",
+                    help="only print how many windows per keyword are still to fetch")
     args = ap.parse_args()
 
-    load_dotenv(ROOT / ".env", override=True, encoding="utf-8-sig")
     start = datetime.fromisoformat(args.start).replace(tzinfo=timezone.utc)
     end = datetime.fromisoformat(args.end).replace(tzinfo=timezone.utc)
+    step = timedelta(hours=args.window_hours)
+    keywords = load_keywords().search_keywords
 
+    pending = pending_windows(keywords, start, end, step, RAW_DIR)
+    for kw, n in pending.items():
+        logging.info("pending windows: %-16s %d", kw, n)
+    if args.dry_run:
+        return
+
+    # utf-8-sig: a .env saved by Notepad or PowerShell may start with a BOM, which would
+    # otherwise end up in the first variable name
+    load_dotenv(ROOT / ".env", override=True, encoding="utf-8-sig")
     client = BlueskyClient(os.environ["BSKY_HANDLE"], os.environ["BSKY_APP_PASSWORD"])
     t0 = time.time()
-    run_backfill(client, load_keywords().search_keywords, start, end,
-                 timedelta(hours=args.window_hours), RAW_DIR, sleep=time.sleep)
+    run_backfill(client, keywords, start, end, step, RAW_DIR, sleep=time.sleep)
     logging.info("finished in %.0f s, requests: %d", time.time() - t0, client.n_requests)
 
 

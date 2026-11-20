@@ -14,7 +14,7 @@ import json
 import logging
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Callable, Iterable, Set
+from typing import Callable, Dict, Iterable, Iterator, Set, Tuple
 
 import requests
 
@@ -57,6 +57,15 @@ def window_key(keyword: str, start: datetime, end: datetime) -> str:
     return f"{keyword}|{iso(start)}|{iso(end)}"
 
 
+def iter_windows(start: datetime, end: datetime, step: timedelta) -> Iterator[Tuple[datetime, datetime]]:
+    """Consecutive [a, b) windows of ``step`` from ``start``; the last one may be shorter."""
+    a = start
+    while a < end:
+        b = min(a + step, end)
+        yield a, b
+        a = b
+
+
 def process_window(
     client: BlueskyClient,
     keyword: str,
@@ -87,6 +96,23 @@ def process_window(
     log.info("%s -> %d", key, len(posts))
 
 
+def pending_windows(
+    keywords: Iterable[str],
+    start: datetime,
+    end: datetime,
+    step: timedelta,
+    raw_dir: Path,
+) -> Dict[str, int]:
+    """Number of top-level windows not yet in _done.txt, per keyword (no API calls).
+
+    Resume keys contain the exact window bounds, so re-running a range with a different
+    --window-hours (or a different start hour) fetches it again; check this before a long run.
+    """
+    done = DoneLog(raw_dir / DONE_FILE_NAME)
+    windows = list(iter_windows(start, end, step))
+    return {kw: sum(window_key(kw, a, b) not in done for a, b in windows) for kw in keywords}
+
+
 def run_backfill(
     client: BlueskyClient,
     keywords: Iterable[str],
@@ -101,9 +127,7 @@ def run_backfill(
     """Backfill [start, end) for all keywords in windows of ``step``."""
     keywords = list(keywords)
     done = DoneLog(raw_dir / DONE_FILE_NAME)
-    a = start
-    while a < end:
-        b = min(a + step, end)
+    for a, b in iter_windows(start, end, step):
         for kw in keywords:
             for _ in range(retries):
                 try:
@@ -115,4 +139,3 @@ def run_backfill(
                     sleep(wait_after_error)
             else:
                 raise SystemExit(f"window {kw} {iso(a)} failed after {retries} attempts")
-        a = b

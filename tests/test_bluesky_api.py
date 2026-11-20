@@ -10,6 +10,7 @@ from seismic_attention.ingest import bluesky_api as api
 from seismic_attention.ingest.bluesky_backfill import (
     DONE_FILE_NAME,
     DoneLog,
+    pending_windows,
     process_window,
     run_backfill,
     window_key,
@@ -224,6 +225,16 @@ def test_backfill_retries_window_after_network_error(tmp_path):
                  tmp_path, sleep=sleeps.append, wait_after_error=1)
     assert sleeps == [1]
     assert (tmp_path / "2024-01-01.jsonl").exists()
+
+
+def test_pending_windows_depend_on_window_size(tmp_path):
+    (tmp_path / DONE_FILE_NAME).write_text(
+        window_key("quake", T0, T0 + timedelta(hours=1)) + "\n", encoding="utf-8")
+    two_hours = T0 + timedelta(hours=2)
+    assert pending_windows(["quake", "地震"], T0, two_hours, timedelta(hours=1), tmp_path) \
+        == {"quake": 1, "地震": 2}
+    # a different window size produces different keys, so everything is pending again
+    assert pending_windows(["quake"], T0, two_hours, timedelta(hours=2), tmp_path) == {"quake": 1}
 
 
 # ---------- keyword config ----------

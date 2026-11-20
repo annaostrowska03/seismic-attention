@@ -1,5 +1,7 @@
 # Runs scripts/bsky_backfill.py in a loop until it finishes (resumable), logging to logs/.
-# Usage: .\scripts\run_bsky_backfill.ps1 -Start 2025-01-01 -End 2026-01-01 -WindowHours 6
+# Usage: .\scripts\run_bsky_backfill.ps1 -Start 2024-01-02 -End 2025-01-01 -WindowHours 6
+# Check first what is still missing (resume keys depend on the window size):
+#   .\.venv\Scripts\python.exe scripts\bsky_backfill.py --start 2024-01-02 --end 2025-01-01 --window-hours 6 --dry-run
 param(
     [string]$Start = "2024-01-01",
     [string]$End = "2025-01-01",
