@@ -103,10 +103,15 @@ From the repository root, Docker stack running (`docs/SETUP.md`).
 .\.venv\Scripts\python.exe scripts\bsky_backfill.py --dry-run
 .\scripts\run_bsky_backfill.ps1
 
+#    keyword review: posts per keyword, what each keyword adds, example texts
+python scripts/bsky_keyword_stats.py
+
 # 2. NiFi flow: local files -> HDFS + Kafka (can also be started from the NiFi canvas)
 python scripts/nifi_bsky_flow.py create
 python scripts/nifi_bsky_flow.py start
 python scripts/nifi_bsky_flow.py status
+#    when all files are processed: HDFS and Kafka compared with the local files
+python scripts/verify_bsky_ingest.py
 
 # 3. Spark job: HDFS raw -> curated Parquet, writes data/processed/bsky_summary.json
 docker compose exec spark-master /opt/spark/bin/spark-submit /opt/app/scripts/spark_bsky_preprocess.py
@@ -117,6 +122,9 @@ python scripts/hive_bsky.py verify
 
 # 5. tests (Spark tests need Java; this runs everything in the Spark container)
 python scripts/run_spark_tests.py
+
+# 6. sample for the repository: about 1000 raw records with the edge cases, fixed seed
+python scripts/make_bsky_sample.py
 ```
 
 ## 8. Control numbers (2024–2025)
@@ -187,8 +195,8 @@ Automated tests run on every pull request (GitHub Actions) and locally with
 | BSKY-F-14 | Keyword columns; exclusions only flag | `test_unrelated_candidate_is_a_flag_only`, `test_matched_keywords`, `test_keyword_config_loads` | flags correct, no rows removed | – |
 | BSKY-F-15 | Per-minute table and control numbers | `test_minute_counts_are_dense_and_count_authors`, `test_summary_control_numbers` | every minute present; counts correct | – |
 | BSKY-I-01 | Docker stack is healthy | `python scripts/smoke_test.py` | all services OK | – |
-| BSKY-I-02 | NiFi loads every file into HDFS unchanged | run the flow; compare file count and total bytes in `/raw/bsky` with `data/raw/bsky` | equal | – |
-| BSKY-I-03 | NiFi publishes every post to Kafka | count committed messages in `bsky`; compare with raw line count; parse every message as JSON | equal; 0 invalid | – |
+| BSKY-I-02 | NiFi loads every file into HDFS unchanged | run the flow, then `python scripts/verify_bsky_ingest.py` (HDFS checks) | same files and sizes as `data/raw/bsky`, in `date=` folders | – |
+| BSKY-I-03 | NiFi publishes every post to Kafka | `python scripts/verify_bsky_ingest.py` (Kafka checks: `read_committed` count, JSON parse) | messages = local lines; 0 invalid | – |
 | BSKY-I-04 | Spark job processes the HDFS data | run the job (section 7, step 3) | finishes; summary file written | – |
 | BSKY-I-05 | Hive shows the same data as Spark | `python scripts/hive_bsky.py verify` | 8/8 checks OK | – |
 | BSKY-I-06 | All tests pass in CI | GitHub Actions run on the pull request | all passed, none skipped | – |
