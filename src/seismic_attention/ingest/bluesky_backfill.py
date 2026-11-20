@@ -3,18 +3,19 @@
 For every keyword, posts are fetched window by window. A window whose results hit the page
 limit is split in half recursively (down to MIN_WINDOW).
 
-Resume: finished windows are appended to ``_done.txt`` as ``keyword|start|end`` and skipped on
-the next run. A parent window is marked done only after both halves are done. Adding a new
-keyword fetches only that keyword. The same post can match several keywords, so raw files
-contain duplicates; they are removed later by ``uri``.
+Resume: finished windows are appended to ``_done.txt`` as ``keyword|start|end``. A window is
+skipped when finished windows of the same keyword cover it, whatever their size, so a different
+window size or date range fetches only what is missing. A parent window is marked done only
+after both halves are done. Adding a new keyword fetches only that keyword. The same post can
+match several keywords, so raw files contain duplicates; they are removed later by ``uri``.
 """
 from __future__ import annotations
 
 import json
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Callable, Dict, Iterable, Iterator, Set, Tuple
+from typing import Callable, Dict, Iterable, Iterator, List, Optional, Set, Tuple
 
 import requests
 
@@ -33,28 +34,68 @@ RETRIES_PER_WINDOW = 12     # attempts per window after network errors / exhaust
 WAIT_AFTER_ERROR = 300      # seconds
 DONE_FILE_NAME = "_done.txt"
 
+Span = Tuple[datetime, datetime]
+
+
+def window_key(keyword: str, start: datetime, end: datetime) -> str:
+    return f"{keyword}|{iso(start)}|{iso(end)}"
+
+
+def parse_key(key: str) -> Optional[Tuple[str, datetime, datetime]]:
+    """Inverse of window_key; None for a blank or malformed line."""
+    try:
+        keyword, start, end = key.rsplit("|", 2)
+        return keyword, _from_iso(start), _from_iso(end)
+    except ValueError:
+        return None
+
+
+def _from_iso(text: str) -> datetime:
+    return datetime.strptime(text, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+
+
+def _merge(spans: Iterable[Span]) -> List[Span]:
+    """Sort intervals and join overlapping or touching ones: (0,2) (1,3) (3,4) -> (0,4)."""
+    merged: List[Span] = []
+    for a, b in sorted(spans):
+        if merged and a <= merged[-1][1]:
+            merged[-1] = (merged[-1][0], max(merged[-1][1], b))
+        else:
+            merged.append((a, b))
+    return merged
+
 
 class DoneLog:
-    """Append-only set of finished window keys, persisted in ``_done.txt``."""
+    """Finished windows from the append-only ``_done.txt``, with a coverage check per keyword."""
 
     def __init__(self, path: Path) -> None:
         self.path = path
         self.keys: Set[str] = set()
+        self._spans: Dict[str, List[Span]] = {}
         if path.exists():
             self.keys = set(path.read_text(encoding="utf-8").splitlines())
+            by_keyword: Dict[str, List[Span]] = {}
+            for parsed in filter(None, map(parse_key, self.keys)):
+                keyword, start, end = parsed
+                by_keyword.setdefault(keyword, []).append((start, end))
+            self._spans = {kw: _merge(spans) for kw, spans in by_keyword.items()}
 
     def __contains__(self, key: str) -> bool:
         return key in self.keys
+
+    def covers(self, keyword: str, start: datetime, end: datetime) -> bool:
+        """True if finished windows of ``keyword`` cover [start, end) without a gap."""
+        return any(a <= start and end <= b for a, b in self._spans.get(keyword, ()))
 
     def add(self, key: str) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with open(self.path, "a", encoding="utf-8") as f:
             f.write(key + "\n")
         self.keys.add(key)
-
-
-def window_key(keyword: str, start: datetime, end: datetime) -> str:
-    return f"{keyword}|{iso(start)}|{iso(end)}"
+        parsed = parse_key(key)
+        if parsed:
+            keyword, start, end = parsed
+            self._spans[keyword] = _merge(self._spans.get(keyword, []) + [(start, end)])
 
 
 def iter_windows(start: datetime, end: datetime, step: timedelta) -> Iterator[Tuple[datetime, datetime]]:
@@ -76,9 +117,9 @@ def process_window(
     max_pages: int = MAX_PAGES,
 ) -> None:
     """Fetch one window (splitting it if needed) and append the posts to the daily file."""
-    key = window_key(keyword, start, end)
-    if key in done:
+    if done.covers(keyword, start, end):
         return
+    key = window_key(keyword, start, end)
     posts, capped = fetch(client, keyword, start, end, max_pages=max_pages)
     if capped and (end - start) > MIN_WINDOW:
         mid = start + (end - start) / 2
@@ -103,14 +144,10 @@ def pending_windows(
     step: timedelta,
     raw_dir: Path,
 ) -> Dict[str, int]:
-    """Number of top-level windows not yet in _done.txt, per keyword (no API calls).
-
-    Resume keys contain the exact window bounds, so re-running a range with a different
-    --window-hours (or a different start hour) fetches it again; check this before a long run.
-    """
+    """Number of top-level windows not yet covered by finished windows, per keyword (no API calls)."""
     done = DoneLog(raw_dir / DONE_FILE_NAME)
     windows = list(iter_windows(start, end, step))
-    return {kw: sum(window_key(kw, a, b) not in done for a, b in windows) for kw in keywords}
+    return {kw: sum(not done.covers(kw, a, b) for a, b in windows) for kw in keywords}
 
 
 def run_backfill(

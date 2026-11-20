@@ -27,6 +27,7 @@ sys.path.insert(0, str(ROOT / "src"))  # /opt/app/src in the container
 
 from pyspark.sql import SparkSession  # noqa: E402
 
+from seismic_attention.config import PERIOD_END, PERIOD_START  # noqa: E402
 from seismic_attention.ingest.keywords import load_keywords  # noqa: E402
 from seismic_attention.preprocess import bluesky as bp  # noqa: E402
 
@@ -35,8 +36,8 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--input", default="hdfs://namenode:9000/raw/bsky")
     ap.add_argument("--output", default="hdfs://namenode:9000/curated/bsky")
-    ap.add_argument("--start", default="2024-01-01", help="period start, UTC, inclusive")
-    ap.add_argument("--end", default="2025-01-01", help="period end, UTC, exclusive")
+    ap.add_argument("--start", default=PERIOD_START, help="period start, UTC, inclusive")
+    ap.add_argument("--end", default=PERIOD_END, help="period end, UTC, exclusive")
     ap.add_argument("--summary-file", default=str(ROOT / "data" / "processed" / "bsky_summary.json"))
     args = ap.parse_args()
 

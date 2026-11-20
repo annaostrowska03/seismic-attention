@@ -227,14 +227,53 @@ def test_backfill_retries_window_after_network_error(tmp_path):
     assert (tmp_path / "2024-01-01.jsonl").exists()
 
 
-def test_pending_windows_depend_on_window_size(tmp_path):
+def test_pending_windows_count_coverage_not_exact_keys(tmp_path):
     (tmp_path / DONE_FILE_NAME).write_text(
         window_key("quake", T0, T0 + timedelta(hours=1)) + "\n", encoding="utf-8")
     two_hours = T0 + timedelta(hours=2)
     assert pending_windows(["quake", "地震"], T0, two_hours, timedelta(hours=1), tmp_path) \
         == {"quake": 1, "地震": 2}
-    # a different window size produces different keys, so everything is pending again
+    # one finished hour does not cover a 2-hour window ...
     assert pending_windows(["quake"], T0, two_hours, timedelta(hours=2), tmp_path) == {"quake": 1}
+    # ... two finished hours do, although they were fetched with a different window size
+    DoneLog(tmp_path / DONE_FILE_NAME).add(window_key("quake", T0 + timedelta(hours=1), two_hours))
+    assert pending_windows(["quake"], T0, two_hours, timedelta(hours=2), tmp_path) == {"quake": 0}
+
+
+def test_window_covered_by_smaller_finished_windows_is_not_fetched(tmp_path):
+    done = DoneLog(tmp_path / DONE_FILE_NAME)
+    for minute in (0, 15, 30, 45):
+        start = T0 + timedelta(minutes=minute)
+        done.add(window_key("quake", start, start + timedelta(minutes=15)))
+    client = WindowFakeClient()
+    process_window(client, "quake", T0, T0 + timedelta(hours=1), DoneLog(tmp_path / DONE_FILE_NAME),
+                   tmp_path)
+    assert client.calls == []
+
+
+def test_only_the_half_with_a_gap_is_fetched(tmp_path):
+    done = DoneLog(tmp_path / DONE_FILE_NAME)
+    done.add(window_key("quake", T0, T0 + timedelta(minutes=15)))
+    done.add(window_key("quake", T0 + timedelta(minutes=30), T0 + timedelta(hours=1)))
+    client = WindowFakeClient()
+    process_window(client, "quake", T0, T0 + timedelta(hours=1), done, tmp_path, max_pages=2)
+    # 1 h window: two capped pages, then the first half is fetched; the second half is covered
+    assert [(c["since"], c["until"]) for c in client.calls] == [
+        ("2024-01-01T00:00:00Z", "2024-01-01T01:00:00Z"),
+        ("2024-01-01T00:00:00Z", "2024-01-01T01:00:00Z"),
+        ("2024-01-01T00:00:00Z", "2024-01-01T00:30:00Z"),
+    ]
+    assert done.covers("quake", T0, T0 + timedelta(hours=1))
+
+
+def test_done_log_ignores_blank_and_malformed_lines(tmp_path):
+    path = tmp_path / DONE_FILE_NAME
+    path.write_text("\nnot a key\nquake|bad|dates\n"
+                    + window_key("quake", T0, T0 + timedelta(hours=1)) + "\n", encoding="utf-8")
+    done = DoneLog(path)
+    assert done.covers("quake", T0, T0 + timedelta(minutes=30))
+    assert not done.covers("quake", T0, T0 + timedelta(hours=2))
+    assert not done.covers("地震", T0, T0 + timedelta(minutes=30))
 
 
 # ---------- keyword config ----------
