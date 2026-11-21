@@ -88,11 +88,13 @@ def main() -> None:
                         if j < args.samples:
                             samples[k][j] = post.get("text")
 
+    # keyword in the last column: wide (CJK) and right-to-left (Arabic) scripts would shift
+    # or reorder any column after it
     lines = [f"unique posts: {len(seen)}   unreadable lines: {unreadable}", "",
-             f"{'keyword':<18}{'posts':>9}{'2024':>9}{'2025':>9}{'only':>9}{'flagged':>9}"]
+             f"{'posts':>9}{'2024':>9}{'2025':>9}{'only':>9}{'flagged':>9}   keyword"]
     for k in keywords + [NO_KEYWORD]:
-        lines.append(f"{k:<18}{posts[k]:>9}{by_year[k]['2024']:>9}{by_year[k]['2025']:>9}"
-                     f"{only[k]:>9}{flagged[k]:>9}")
+        lines.append(f"{posts[k]:>9}{by_year[k]['2024']:>9}{by_year[k]['2025']:>9}"
+                     f"{only[k]:>9}{flagged[k]:>9}   {k}")
     for k in keywords + [NO_KEYWORD]:
         lines += ["", f"--- {k}: examples of posts where it is the only keyword ---"]
         lines += [f"  - {one_line(t)}" for t in samples[k]] or ["  (none)"]
