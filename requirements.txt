@@ -1,8 +1,13 @@
 requests
+python-dotenv
 pandas
+pyarrow
+matplotlib
+pyspark==3.5.3
 river
 scikit-learn
 lightgbm
 fastapi
 uvicorn
 pytest
+nbstripout
