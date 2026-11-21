@@ -5,7 +5,7 @@
 Every minute downloads the USGS feed of M4.5+ earthquakes from the last hour
 (`4.5_hour.geojson`), splits it into single events, drops versions already seen
 (same `id` and `updated`), adds `ingest_time_utc` and sends each event to Kafka topic `usgs`
-and to HDFS `/raw/usgs/yyyy/MM/dd/HH/`.
+and to HDFS `/raw/usgs/date=YYYY-MM-DD/`
 
 The same event can come more than once if USGS updates it. The first-seen time of an event is
 the smallest `ingest_time_utc` for its `id`.
