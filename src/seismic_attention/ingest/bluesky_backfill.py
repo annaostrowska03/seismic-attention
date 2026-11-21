@@ -3,6 +3,11 @@
 For every keyword, posts are fetched window by window. A window whose results hit the page
 limit is split in half recursively (down to MIN_WINDOW).
 
+A window on which the server keeps failing is split the same way. This happened once: HTTP 502
+for every request whose time range contained one particular post. Splitting leaves out only the
+smallest window around the failing spot. That window is skipped, reported at the end of the run
+and not written to ``_done.txt``, so a later run tries it again.
+
 Resume: finished windows are appended to ``_done.txt`` as ``keyword|start|end``. A window is
 skipped when finished windows of the same keyword cover it, whatever their size, so a different
 window size or date range fetches only what is missing. A parent window is marked done only
@@ -22,6 +27,7 @@ import requests
 from seismic_attention.ingest.bluesky_api import (
     MAX_PAGES,
     BlueskyClient,
+    RetryExhaustedError,
     fetch,
     iso,
     slim,
@@ -30,8 +36,9 @@ from seismic_attention.ingest.bluesky_api import (
 log = logging.getLogger(__name__)
 
 MIN_WINDOW = timedelta(minutes=1)
-RETRIES_PER_WINDOW = 12     # attempts per window after network errors / exhausted retries
+RETRIES_PER_WINDOW = 12     # attempts per window after network errors
 WAIT_AFTER_ERROR = 300      # seconds
+MAX_SKIPPED = 5             # more failing minimal windows in one run means the API is probably down
 DONE_FILE_NAME = "_done.txt"
 
 Span = Tuple[datetime, datetime]
@@ -115,18 +122,37 @@ def process_window(
     done: DoneLog,
     raw_dir: Path,
     max_pages: int = MAX_PAGES,
-) -> None:
-    """Fetch one window (splitting it if needed) and append the posts to the daily file."""
+    skipped: Optional[List[str]] = None,
+) -> bool:
+    """Fetch one window (splitting it if needed) and append the posts to the daily file.
+
+    Returns False if a part of the window was skipped after server errors; its key is added
+    to ``skipped``.
+    """
     if done.covers(keyword, start, end):
-        return
+        return True
+    skipped = [] if skipped is None else skipped
     key = window_key(keyword, start, end)
-    posts, capped = fetch(client, keyword, start, end, max_pages=max_pages)
-    if capped and (end - start) > MIN_WINDOW:
+    splittable = (end - start) > MIN_WINDOW
+    try:
+        posts, capped = fetch(client, keyword, start, end, max_pages=max_pages)
+    except RetryExhaustedError as exc:
+        if not splittable:
+            if key not in skipped:
+                skipped.append(key)
+            log.warning("skipped after server errors: %s (%s)", key, exc)
+            if len(skipped) > MAX_SKIPPED:
+                raise SystemExit(f"more than {MAX_SKIPPED} windows failed, the API may be down")
+            return False
+        log.warning("server errors, splitting: %s", key)
+        posts, capped = [], True    # handled like a capped window: fetch both halves
+    if capped and splittable:
         mid = start + (end - start) / 2
-        process_window(client, keyword, start, mid, done, raw_dir, max_pages)
-        process_window(client, keyword, mid, end, done, raw_dir, max_pages)
-        done.add(key)               # parent is done because both halves are done
-        return
+        first = process_window(client, keyword, start, mid, done, raw_dir, max_pages, skipped)
+        second = process_window(client, keyword, mid, end, done, raw_dir, max_pages, skipped)
+        if first and second:
+            done.add(key)           # parent is done because both halves are done
+        return first and second
     if capped:
         log.warning("window truncated by page limit: %s", key)
     raw_dir.mkdir(parents=True, exist_ok=True)
@@ -135,6 +161,7 @@ def process_window(
             f.write(json.dumps(slim(post), ensure_ascii=False) + "\n")
     done.add(key)
     log.info("%s -> %d", key, len(posts))
+    return True
 
 
 def pending_windows(
@@ -160,15 +187,19 @@ def run_backfill(
     sleep: Callable[[float], None],
     retries: int = RETRIES_PER_WINDOW,
     wait_after_error: float = WAIT_AFTER_ERROR,
-) -> None:
-    """Backfill [start, end) for all keywords in windows of ``step``."""
+) -> List[str]:
+    """Backfill [start, end) for all keywords in windows of ``step``.
+
+    Returns the keys of windows skipped after server errors (they are still missing).
+    """
     keywords = list(keywords)
     done = DoneLog(raw_dir / DONE_FILE_NAME)
+    skipped: List[str] = []
     for a, b in iter_windows(start, end, step):
         for kw in keywords:
             for _ in range(retries):
                 try:
-                    process_window(client, kw, a, b, done, raw_dir)
+                    process_window(client, kw, a, b, done, raw_dir, skipped=skipped)
                     break
                 except (requests.RequestException, RuntimeError) as exc:
                     log.error("error (%s, %s): %r - waiting %s s", kw, iso(a), exc,
@@ -176,3 +207,4 @@ def run_backfill(
                     sleep(wait_after_error)
             else:
                 raise SystemExit(f"window {kw} {iso(a)} failed after {retries} attempts")
+    return skipped

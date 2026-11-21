@@ -89,6 +89,7 @@ class BlueskyClient:
 
     def search(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """One searchPosts request with retries on 401, 429 and 5xx."""
+        last_error = ""
         for attempt in range(MAX_ATTEMPTS):
             wait = self.min_interval - (self.clock() - self.last_request)
             if wait > 0:
@@ -101,6 +102,7 @@ class BlueskyClient:
             self._respect_rate_limit(r)
             if r.status_code == 200:
                 return r.json()
+            last_error = f"HTTP {r.status_code} {r.text[:200]}"
             # an expired access token can also come back as HTTP 400 with error "ExpiredToken"
             if r.status_code == 401 or "ExpiredToken" in r.text:
                 self.login()
@@ -112,7 +114,7 @@ class BlueskyClient:
                 self.sleep(5 * (attempt + 1))
                 continue
             raise FatalError(f"HTTP {r.status_code}: {r.text[:200]}")
-        raise RetryExhaustedError(f"too many attempts for one request: {params}")
+        raise RetryExhaustedError(f"too many attempts for one request ({last_error}): {params}")
 
 
 def fetch(

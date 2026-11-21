@@ -68,8 +68,11 @@ def main() -> None:
     load_dotenv(ROOT / ".env", override=True, encoding="utf-8-sig")
     client = BlueskyClient(os.environ["BSKY_HANDLE"], os.environ["BSKY_APP_PASSWORD"])
     t0 = time.time()
-    run_backfill(client, keywords, start, end, step, RAW_DIR, sleep=time.sleep)
+    skipped = run_backfill(client, keywords, start, end, step, RAW_DIR, sleep=time.sleep)
     logging.info("finished in %.0f s, requests: %d", time.time() - t0, client.n_requests)
+    if skipped:
+        logging.warning("%d window(s) skipped after server errors, a later run retries them: %s",
+                        len(skipped), ", ".join(skipped))
 
 
 if __name__ == "__main__":

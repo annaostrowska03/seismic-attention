@@ -36,6 +36,9 @@ it loads them into HDFS and Kafka, and it is the entry point for the replay demo
   run, a new login only when the token expires.
 - Each keyword is fetched in 6-hour windows. The API returns at most 100 pages of 100 posts, so a
   window with more results is split in half until it fits (down to 1 minute).
+- If the server keeps returning errors for a window, the window is split the same way. The
+  smallest part that still fails (at most 1 minute) is skipped and listed at the end of the run.
+  It is not marked as finished, so a later run tries it again.
 - Finished windows are written to `data/raw/bsky/_done.txt`. A new run skips every window that is
   already covered, so running the script again downloads only what is missing. To download
   everything again, move `data/raw/bsky` away first.
@@ -158,6 +161,10 @@ Source: `data/processed/bsky_summary.json` from the Spark job on HDFS.
   no count of all Bluesky posts per minute. Burst detection has to compare keyword posts with their
   own recent level.
 - **Likes and reposts** are counts at download time, not at the time of the earthquake.
+- **One spot cannot be downloaded:** for keyword "earthquake", Bluesky returns HTTP 502 for every
+  search whose time range contains 2025-12-28 16:24:22–16:25:04 UTC (checked repeatedly over
+  several hours), most likely because of one broken post on their side. These 42 seconds are
+  missing for that keyword, and `--dry-run` keeps showing 1 pending window for it.
 
 ## 10. Operational notes
 
@@ -188,12 +195,13 @@ Automated tests run on every pull request (GitHub Actions) and locally with
 | BSKY-F-07 | Busy windows are split, halves before parent | `test_window_is_split_until_it_fits` | two 30-min halves, parent marked done last | – |
 | BSKY-F-08 | A new run downloads only what is missing | `test_finished_windows_are_skipped_on_resume`, `test_window_covered_by_smaller_finished_windows_is_not_fetched`, `test_only_the_half_with_a_gap_is_fetched`, `test_pending_windows_count_coverage_not_exact_keys` | covered windows skipped, also with a different window size | – |
 | BSKY-F-09 | Download survives network errors | `test_backfill_retries_window_after_network_error` | waits and retries the window | – |
-| BSKY-F-10 | Raw reading ignores other files and keeps broken lines visible | `test_read_raw_ignores_other_files_and_counts_corrupt_lines`, `test_read_raw_finds_files_in_hdfs_style_partition_dirs` | only `*.jsonl` read; corrupt line counted | – |
-| BSKY-F-11 | Duplicates are removed by `uri` | `test_duplicates_are_removed_by_uri_and_earliest_file_wins` | one row per post, `n_copies` correct | – |
-| BSKY-F-12 | Event time rule at its boundaries | `test_t_event_rule`, `test_in_period_uses_t_event` | 5 min tolerance exact; bad dates fall back to `indexedAt` | – |
-| BSKY-F-13 | `reindexed` and `is_clean` thresholds | `test_reindexed_threshold_is_strictly_more_than_one_day`, `test_clean_lag_window_is_minus5_to_plus10_minutes` | > 1 day; −5…+10 min inclusive | – |
-| BSKY-F-14 | Keyword columns; exclusions only flag | `test_unrelated_candidate_is_a_flag_only`, `test_matched_keywords`, `test_keyword_config_loads` | flags correct, no rows removed | – |
-| BSKY-F-15 | Per-minute table and control numbers | `test_minute_counts_are_dense_and_count_authors`, `test_summary_control_numbers` | every minute present; counts correct | – |
+| BSKY-F-10 | A window on which the server keeps failing does not stop the download | `test_server_errors_split_the_window_and_skip_only_the_failing_minute`, `test_backfill_stops_when_many_windows_fail` | window split; only the failing part (≤ 1 min) skipped and still pending; run stops after more than 5 such parts | – |
+| BSKY-F-11 | Raw reading ignores other files and keeps broken lines visible | `test_read_raw_ignores_other_files_and_counts_corrupt_lines`, `test_read_raw_finds_files_in_hdfs_style_partition_dirs` | only `*.jsonl` read; corrupt line counted | – |
+| BSKY-F-12 | Duplicates are removed by `uri` | `test_duplicates_are_removed_by_uri_and_earliest_file_wins` | one row per post, `n_copies` correct | – |
+| BSKY-F-13 | Event time rule at its boundaries | `test_t_event_rule`, `test_in_period_uses_t_event` | 5 min tolerance exact; bad dates fall back to `indexedAt` | – |
+| BSKY-F-14 | `reindexed` and `is_clean` thresholds | `test_reindexed_threshold_is_strictly_more_than_one_day`, `test_clean_lag_window_is_minus5_to_plus10_minutes` | > 1 day; −5…+10 min inclusive | – |
+| BSKY-F-15 | Keyword columns; exclusions only flag | `test_unrelated_candidate_is_a_flag_only`, `test_matched_keywords`, `test_keyword_config_loads` | flags correct, no rows removed | – |
+| BSKY-F-16 | Per-minute table and control numbers | `test_minute_counts_are_dense_and_count_authors`, `test_summary_control_numbers` | every minute present; counts correct | – |
 | BSKY-I-01 | Docker stack is healthy | `python scripts/smoke_test.py` | all services OK | – |
 | BSKY-I-02 | NiFi loads every file into HDFS unchanged | run the flow, then `python scripts/verify_bsky_ingest.py` (HDFS checks) | same files and sizes as `data/raw/bsky`, in `date=` folders | – |
 | BSKY-I-03 | NiFi publishes every post to Kafka | `python scripts/verify_bsky_ingest.py` (Kafka checks: `read_committed` count, JSON parse) | messages = local lines; 0 invalid | – |
@@ -201,7 +209,7 @@ Automated tests run on every pull request (GitHub Actions) and locally with
 | BSKY-I-05 | Hive shows the same data as Spark | `python scripts/hive_bsky.py verify` | 8/8 checks OK | – |
 | BSKY-I-06 | All tests pass in CI | GitHub Actions run on the pull request | all passed, none skipped | – |
 | BSKY-Q-01 | Raw files are readable | `corrupt_rows` in the summary | 0 | – |
-| BSKY-Q-02 | Every day of the period was downloaded | `--dry-run`; `raw_files` in the summary | 0 pending windows; 731 daily files | – |
+| BSKY-Q-02 | Every day of the period was downloaded | `--dry-run`; `raw_files` in the summary | 0 pending windows, except the known gap (section 9); 731 daily files | – |
 | BSKY-Q-03 | Posts are unique after cleaning | Hive: `count(DISTINCT uri)` = `count(*)` on `bsky_posts` | equal | – |
 | BSKY-Q-04 | Per-minute table is complete and consistent | Hive: rows of `bsky_minute`; sum of `n_posts` | 1 052 640 rows; sum = posts in period | – |
 | BSKY-Q-05 | Server timestamps are always valid | `unparsable_indexed_at` in the summary | 0 | – |

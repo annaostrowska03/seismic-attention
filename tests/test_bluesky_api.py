@@ -5,6 +5,7 @@ import json
 from datetime import datetime, timedelta, timezone
 
 import pytest
+import requests
 
 from seismic_attention.ingest import bluesky_api as api
 from seismic_attention.ingest.bluesky_backfill import (
@@ -124,7 +125,7 @@ def test_403_is_fatal_without_retry():
 
 def test_retries_are_bounded():
     session = FakeSession(get_responses=[FakeResponse(503)] * api.MAX_ATTEMPTS)
-    with pytest.raises(api.RetryExhaustedError):
+    with pytest.raises(api.RetryExhaustedError, match="HTTP 503"):   # last error in the message
         make_client(session).search({"q": "x"})
 
 
@@ -217,7 +218,7 @@ def test_backfill_retries_window_after_network_error(tmp_path):
         def search(self, params):
             if not self.calls:
                 self.calls.append(params)
-                raise api.RetryExhaustedError("boom")
+                raise requests.ConnectionError("boom")
             return super().search(params)
 
     sleeps = []
@@ -225,6 +226,47 @@ def test_backfill_retries_window_after_network_error(tmp_path):
                  tmp_path, sleep=sleeps.append, wait_after_error=1)
     assert sleeps == [1]
     assert (tmp_path / "2024-01-01.jsonl").exists()
+
+
+class BrokenSpotClient(WindowFakeClient):
+    """The server fails on every request whose window contains BAD (like the HTTP 502 case)."""
+
+    BAD = T0 + timedelta(minutes=10)
+
+    def search(self, params):
+        start = datetime.fromisoformat(params["since"].replace("Z", "+00:00"))
+        end = datetime.fromisoformat(params["until"].replace("Z", "+00:00"))
+        if start <= self.BAD < end:
+            self.calls.append(params)
+            raise api.RetryExhaustedError("HTTP 502")
+        return super().search(params)
+
+
+def test_server_errors_split_the_window_and_skip_only_the_failing_minute(tmp_path):
+    sleeps = []
+    half_hour = T0 + timedelta(minutes=30)
+    skipped = run_backfill(BrokenSpotClient(), ["quake"], T0, half_hour, timedelta(minutes=30),
+                           tmp_path, sleep=sleeps.append)
+    # 30 min -> 15 -> 7.5 -> 3.75 -> 1.875 -> 0.94 min: the last one is skipped
+    assert skipped == ["quake|2024-01-01T00:09:22Z|2024-01-01T00:10:18Z"]
+    assert sleeps == []                                  # no waiting, no retries of the window
+    done = DoneLog(tmp_path / DONE_FILE_NAME)
+    assert done.covers("quake", T0, T0 + timedelta(minutes=9))
+    assert done.covers("quake", T0 + timedelta(minutes=11), half_hour)
+    assert not done.covers("quake", T0, half_hour)        # the gap stays visible ...
+    assert pending_windows(["quake"], T0, half_hour, timedelta(minutes=30), tmp_path) \
+        == {"quake": 1}                                  # ... so a later run retries it
+
+
+def test_backfill_stops_when_many_windows_fail(tmp_path):
+    class DownClient(WindowFakeClient):
+        def search(self, params):
+            raise api.RetryExhaustedError("HTTP 503")
+
+    with pytest.raises(SystemExit):
+        run_backfill(DownClient(), ["quake"], T0, T0 + timedelta(minutes=30),
+                     timedelta(minutes=30), tmp_path, sleep=lambda s: None)
+    assert not (tmp_path / DONE_FILE_NAME).exists()
 
 
 def test_pending_windows_count_coverage_not_exact_keys(tmp_path):
