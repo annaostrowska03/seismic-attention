@@ -25,7 +25,7 @@ after `MSCK REPAIR TABLE <table>` (the `create` commands of the scripts below ru
 | GDELT | `/raw/gdelt/date=.../<stamp>.jsonl` (earthquake articles) | `gdelt_raw` | `hive/gdelt.sql` (`scripts/hive_gdelt.py create`) |
 | | `/raw/gdelt_files/date=.../<stamp>.jsonl` (file log: ok / missing / broken) | `gdelt_files_raw` | same |
 | | `/history/gdelt_history`, `/history/gdelt_files` | `gdelt_history`, `gdelt_files` | `scripts/load_history.py` |
-| USGS | `/raw/usgs/...` (NiFi flow `nifi/flows/usgs.json`) | – (to be added once the flow writes `date=` folders) | – |
+| USGS | `/raw/usgs/date=.../usgs-<ingest time>-<id>-<updated>.json` (one event version per file, NiFi flow `nifi/flows/usgs.json`) | `usgs_raw` (nested, as received), view `usgs_raw_flat` (columns of `usgs_history`) | `hive/usgs.sql` (`scripts/hive_usgs.py create`) |
 | | `/history/usgs_history` | `usgs_history` | `scripts/load_history.py` |
 
 `<stamp>` is the time of the GDELT file, `yyyyMMddHHmmss` UTC (one file every 15 minutes).
@@ -36,3 +36,6 @@ after `MSCK REPAIR TABLE <table>` (the `create` commands of the scripts below ru
   column. The file time is the first 14 characters of `gkg_id`.
 - `date`, `time` and `file` are reserved words in Hive and need backticks.
 - `scripts/hive_gdelt.py verify` checks that the articles in `gdelt_raw` agree with the file log `gdelt_files_raw`.
+- USGS: the `date` folder is the UTC day of ingest, not of the earthquake. `usgs_raw` keeps every new version of an
+  event (same `id`, new `updated`); `geometry.coordinates` is `[longitude, latitude, depth_km]`.
+  `scripts/hive_usgs.py verify` checks unique versions, coordinates and partition dates.
