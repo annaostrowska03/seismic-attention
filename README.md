@@ -3,9 +3,12 @@
 **Internet as an Earthquake Sensor (USGS + Bluesky + GDELT)** 
 Big Data Analytics project, Team MANG.
 
-For every new M4.5+ earthquake in the USGS catalogue, the system measures the Bluesky reaction
+For every M4.5+ earthquake in the USGS catalogue, the system measures the Bluesky reaction
 (human posts separated from bots) and predicts whether the event will be covered by global media
 (GDELT, 48 h), at T0 (USGS features only) and at T+15 min (with social-reaction features).
+
+The system works on historical data from 2024 and 2025. The streaming part is shown by replaying
+these data in time order through NiFi, Kafka and Spark, as if they were arriving live.
 
 ## Infrastructure (Docker)
 
@@ -20,18 +23,33 @@ Full guide: [docs/SETUP.md](docs/SETUP.md).
 
 ```bash
 python -m venv .venv
-.venv\Scripts\activate
+.venv\Scripts\activate          # Windows
+source .venv/bin/activate       # macOS / Linux
 pip install -r requirements.txt
 pytest
 ```
+
+The Spark tests need Java and are skipped without it. To run all tests inside the Spark
+container (no local Java needed):
+
+```bash
+python scripts/run_spark_tests.py
+```
+
+GitHub Actions runs the full test suite on every pull request (`.github/workflows/tests.yml`).
+
+## Documentation
+
+- [docs/SETUP.md](docs/SETUP.md) – Docker stack setup
+- [docs/bluesky.md](docs/bluesky.md) – Bluesky source: acquisition, processing rules, Hive tables, test cases
 
 ## History
 
 USGS catalogue (M4.5+) and GDELT articles with an earthquake theme, downloaded to `data/raw/`:
 
 ```bash
-python scripts/backfill_usgs.py 2024-01 2026-11 # first month 2024-01, last month 2026-11
-python scripts/backfill_gdelt.py 2024-01-01 2026-11-01   # first day, last day; end date excluded
+python scripts/backfill_usgs.py                                         # study period from config.py
+python scripts/backfill_gdelt.py --start 2025-03-01 --end 2025-04-01     # a shorter range, end excluded
 ```
 
 Load to HDFS (Parquet) and Hive tables `seismic.usgs_history`, `seismic.gdelt_history`,

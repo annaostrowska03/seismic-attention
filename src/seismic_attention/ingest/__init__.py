@@ -1,1 +1,1 @@
-"""USGS, Bluesky Jetstream and GDELT stream ingestion."""
+"""Data acquisition for USGS, Bluesky and GDELT."""

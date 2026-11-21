@@ -1,0 +1,38 @@
+{
+  "_comment": "Search keywords for app.bsky.feed.searchPosts and exclusion terms. Exclusion terms never drop posts; they only set the unrelated_candidate flag during pre-processing. Matching is case-insensitive.",
+  "search_keywords": [
+    "earthquake",
+    "quake",
+    "地震",
+    "sismo",
+    "terremoto",
+    "deprem",
+    "tsunami",
+    "震度",
+    "津波",
+    "緊急地震速報",
+    "temblor",
+    "gempa",
+    "lindol",
+    "지진",
+    "erdbeben",
+    "séisme",
+    "σεισμός",
+    "землетрясение",
+    "زلزله",
+    "زلزال",
+    "aftershock",
+    "trzęsienie ziemi"
+  ],
+  "exclude_terms": [
+    "quake champions",
+    "quakecon",
+    "quake live",
+    "quake arena",
+    "quake ii",
+    "quake iii",
+    "quake remastered",
+    "quakeworld",
+    "id software"
+  ]
+}
