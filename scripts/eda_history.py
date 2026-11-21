@@ -11,6 +11,7 @@ from seismic_attention.features import SPARK_SCHEMA, usgs_features
 RADII_KM = [100, 150, 200, 250]
 RADIUS_KM = max(RADII_KM)
 WINDOW_H = 48
+MIN_FILES = 173 # 90% of the 192 GDELT files in 48 h; quakes with fewer are not labelled
 START, END = "2024-01-01", "2026-11-21"
 EARTH_RADIUS_KM = 6371.0
 KM_PER_DEG_LAT = 111.0
@@ -48,7 +49,7 @@ report_lines = []
 
 def save_csv(name, df):
     rows = df.collect()
-    with open(f"{OUT_DIR}/{name}.csv", "w", newline="") as f:
+    with open(f"{OUT_DIR}/{name}.csv", "w", newline="", encoding="utf-8") as f:
         writer = csv.writer(f)
         writer.writerow(df.columns)
         writer.writerows(rows)
@@ -106,10 +107,50 @@ articles = (
 )
 
 files = spark.table("seismic.gdelt_files").where(in_range("time"))
+window = F.expr(f"INTERVAL {WINDOW_H} HOURS")
 
 # 1. earthquakes per month by magnitude
 report("quakes_per_month", quakes.groupBy("month").pivot("mag_bin").count().na.fill(0).orderBy("month"),
        "Earthquakes per month by magnitude (column = floor(mag), 7 = M7+)")
+
+# records per day for filtering
+usgs_daily = quakes.groupBy(F.to_date("time").alias("day")).agg(F.count("*").alias("n"))
+gdelt_daily = (
+    files.where(F.col("status") == "ok")
+    .groupBy(F.to_date("time").alias("day"))
+    .agg(F.count("*").alias("files"), F.sum("articles").alias("n"))
+    .where(F.col("files") == 96)
+)
+
+
+def per_day(name, daily):
+    return daily.agg(
+        F.lit(name).alias("records"),
+        F.count("*").alias("days"),
+        F.round(F.avg("n"), 1).alias("avg_per_day"),
+        F.min("n").alias("min"),
+        F.max("n").alias("max"),
+    )
+
+
+report("records_per_day",
+       per_day("usgs earthquakes M4.5+", usgs_daily).unionByName(per_day("gdelt earthquake articles", gdelt_daily)),
+       "Records per day")
+
+# USGS data quality
+usgs_raw = spark.table("seismic.usgs_history").where(in_range("time"))
+report("usgs_quality", usgs_raw.agg(
+    F.count("*").alias("rows"),
+    (F.count("*") - F.countDistinct("id")).alias("duplicate_ids"),
+    F.sum((F.col("type") != "earthquake").cast("int")).alias("not_earthquake"),
+    F.sum((F.col("status") == "reviewed").cast("int")).alias("reviewed"),
+    F.sum((F.col("status") == "automatic").cast("int")).alias("automatic"),
+    F.sum(F.col("mag").isNull().cast("int")).alias("no_mag"),
+    F.sum(F.col("depth_km").isNull().cast("int")).alias("no_depth"),
+    F.sum((F.col("place").isNull() | (F.col("place") == "")).cast("int")).alias("no_place"),
+), "USGS catalogue quality")
+report("usgs_mag_type", usgs_raw.groupBy("mag_type").count().orderBy(F.desc("count")),
+       "USGS magnitude types")
 
 # 2. missing GDELT files: expected one per 15 minutes; missing = never downloaded or status != ok
 expected = spark.sql(f"""
@@ -151,7 +192,41 @@ matches = (
     .agg(F.min("dist_km").alias("min_dist_km"), F.countDistinct("gkg_id").alias("n_articles"))
 )
 
-coverage = quakes.join(matches, "id", "left").na.fill(0, ["n_articles"])
+# label only quakes with almost all GDELT files in their window
+ok_files = files.where(F.col("status") == "ok").select(F.col("time").alias("f_time"), F.to_date("time").alias("day"))
+complete = (
+    quakes.select("id", F.col("time").alias("q_time"))
+    .withColumn("day", F.explode(F.sequence(F.to_date("q_time"), F.date_add(F.to_date("q_time"), WINDOW_H // 24))))
+    .join(ok_files, "day")
+    .where((F.col("f_time") >= F.col("q_time")) & (F.col("f_time") <= F.col("q_time") + window))
+    .groupBy("id").count()
+    .where(F.col("count") >= MIN_FILES)
+    .select("id", F.lit(True).alias("gdelt_complete"))
+)
+
+# aftershock = a quake of the same or larger magnitude within RADIUS_KM in the WINDOW_H before
+# articles about the main shock would make it look covered
+earlier = quakes.select(F.col("time").alias("o_time"), F.col("mag").alias("o_mag"),
+                        F.col("latitude").alias("o_lat"), F.col("longitude").alias("o_lon"),
+                        F.to_date("time").alias("day"))
+aftershocks = (
+    quakes.select("id", F.col("time").alias("q_time"), F.col("mag").alias("q_mag"),
+                  F.col("latitude").alias("q_lat"), F.col("longitude").alias("q_lon"))
+    .withColumn("day", F.explode(F.sequence(F.date_sub(F.to_date("q_time"), WINDOW_H // 24), F.to_date("q_time"))))
+    .join(earlier, "day")
+    .where((F.col("o_time") < F.col("q_time")) & (F.col("o_time") >= F.col("q_time") - window))
+    .where(F.col("o_mag") >= F.col("q_mag"))
+    .where(distance_km(F.col("q_lat"), F.col("q_lon"), F.col("o_lat"), F.col("o_lon")) <= RADIUS_KM)
+    .select("id").distinct()
+    .withColumn("aftershock", F.lit(True))
+)
+
+coverage = (
+    quakes.join(matches, "id", "left").na.fill(0, ["n_articles"])
+    .join(complete, "id", "left")
+    .join(aftershocks, "id", "left")
+    .na.fill(False, ["gdelt_complete", "aftershock"])
+)
 for r in RADII_KM:
     coverage = coverage.withColumn(f"cov_{r}", F.coalesce(F.col("min_dist_km") <= r, F.lit(False)))
 coverage = (
@@ -161,15 +236,36 @@ coverage = (
     .cache()
 )
 coverage.select("id", "time", "mag", "depth_km", "latitude", "longitude", "place_region",
-                "min_dist_km", "n_articles", *[f"cov_{r}" for r in RADII_KM]) \
+                "min_dist_km", "n_articles", "gdelt_complete", "aftershock", *[f"cov_{r}" for r in RADII_KM]) \
     .coalesce(1).write.mode("overwrite").parquet(f"file://{OUT_DIR}/quake_coverage")
+
+report("quakes_used", coverage.agg(
+    F.count("*").alias("quakes"),
+    F.sum(F.col("gdelt_complete").cast("int")).alias("complete_gdelt_window"),
+    F.sum(F.col("aftershock").cast("int")).alias("aftershocks"),
+    F.sum((F.col("gdelt_complete") & ~F.col("aftershock")).cast("int")).alias("used"),
+), "Earthquakes used below: complete GDELT window and not an aftershock")
+
+labelled = coverage.where(F.col("gdelt_complete") & ~F.col("aftershock")).cache()
+
+# class balance of the label (covered / not covered) for each radius
+balance = None
+for r in RADII_KM:
+    part = labelled.agg(
+        F.lit(r).alias("radius_km"),
+        F.sum(F.col(f"cov_{r}").cast("int")).alias("covered"),
+        F.sum((~F.col(f"cov_{r}")).cast("int")).alias("not_covered"),
+        F.round(100 * F.avg(F.col(f"cov_{r}").cast("int")), 1).alias("pct_covered"),
+    )
+    balance = part if balance is None else balance.unionByName(part)
+report("class_balance", balance, "Class balance of the coverage label")
 
 
 def coverage_by(dim, order=None):
     aggs = [F.count("*").alias("quakes")] + [
         F.round(100 * F.avg(F.col(f"cov_{r}").cast("int")), 1).alias(f"pct_{r}km") for r in RADII_KM
     ]
-    return coverage.groupBy(dim).agg(*aggs).orderBy(order if order is not None else dim)
+    return labelled.groupBy(dim).agg(*aggs).orderBy(order if order is not None else dim)
 
 
 title = f"% of earthquakes with a GDELT article within {WINDOW_H}h mentioning a place within R km"
@@ -182,7 +278,7 @@ report("coverage_by_place_distance", coverage_by("place_dist_bin_km"),
 report("coverage_by_depth", coverage_by("depth_bin_km"), f"{title} - by depth (bin lower edge, km)")
 report("coverage_by_hour_local", coverage_by("hour_local"), f"{title} - by local solar hour")
 
-with open(f"{OUT_DIR}/report.md", "w") as f:
+with open(f"{OUT_DIR}/report.md", "w", encoding="utf-8") as f:
     f.write(f"# EDA history {START} - {END}\n\n" + "\n".join(report_lines))
 print(f"saved to {OUT_DIR}")
 
