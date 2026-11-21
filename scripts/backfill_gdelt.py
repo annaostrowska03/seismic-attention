@@ -1,3 +1,4 @@
+import argparse
 import csv
 import io
 import json
@@ -9,6 +10,9 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 import requests
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+from seismic_attention.config import PERIOD_END, PERIOD_START
 
 URL = "http://data.gdeltproject.org/gdeltv2/{}.gkg.csv.zip"
 OUT_DIR = Path("data/raw/gdelt_history")
@@ -84,8 +88,12 @@ def backfill_day(day):
 
 
 def main():
-    start = datetime.strptime(sys.argv[1], "%Y-%m-%d")
-    end = datetime.strptime(sys.argv[2], "%Y-%m-%d")
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--start", default=PERIOD_START, help="YYYY-MM-DD (UTC, inclusive), default %(default)s")
+    parser.add_argument("--end", default=PERIOD_END, help="YYYY-MM-DD (UTC, exclusive), default %(default)s")
+    args = parser.parse_args()
+    start = datetime.fromisoformat(args.start)
+    end = datetime.fromisoformat(args.end)
     (OUT_DIR / "articles").mkdir(parents=True, exist_ok=True)
     (OUT_DIR / "files").mkdir(parents=True, exist_ok=True)
     day = start

@@ -194,7 +194,7 @@
           "Append Mode": "DEFAULT",
           "writing-strategy": "writeAndRename",
           "Kerberos Relogin Period": "4 hours",
-          "Directory": "/raw/usgs/${now():format('yyyy/MM/dd/HH')}",
+          "Directory": "/raw/usgs/date=${now():format('yyyy-MM-dd', 'UTC')}",
           "Conflict Resolution Strategy": "fail"
         },
         "propertyDescriptors": {

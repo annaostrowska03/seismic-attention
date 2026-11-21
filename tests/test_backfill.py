@@ -1,19 +1,22 @@
-from datetime import datetime
+from datetime import datetime, date
 
 import backfill_gdelt
 import backfill_usgs
 
 
-def test_months_within_one_year():
-    assert backfill_usgs.months("2026-09", "2026-11") == [(2026, 9), (2026, 10), (2026, 11)]
+def test_month_ranges_across_new_year():
+    assert backfill_usgs.month_ranges(date(2025, 11, 1), date(2026, 2, 1)) == [
+        (date(2025, 11, 1), date(2025, 12, 1)),
+        (date(2025, 12, 1), date(2026, 1, 1)),
+        (date(2026, 1, 1), date(2026, 2, 1)),
+    ]
 
 
-def test_months_across_new_year():
-    assert backfill_usgs.months("2025-11", "2026-02") == [(2025, 11), (2025, 12), (2026, 1), (2026, 2)]
-
-
-def test_months_single():
-    assert backfill_usgs.months("2026-10", "2026-10") == [(2026, 10)]
+def test_month_ranges_part_of_month():
+    assert backfill_usgs.month_ranges(date(2025, 3, 10), date(2025, 4, 5)) == [
+        (date(2025, 3, 10), date(2025, 4, 1)),
+        (date(2025, 4, 1), date(2025, 4, 5)),
+    ]
 
 
 def test_day_stamps():

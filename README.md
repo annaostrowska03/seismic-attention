@@ -48,8 +48,8 @@ GitHub Actions runs the full test suite on every pull request (`.github/workflow
 USGS catalogue (M4.5+) and GDELT articles with an earthquake theme, downloaded to `data/raw/`:
 
 ```bash
-python scripts/backfill_usgs.py 2024-01 2026-11 # first month 2024-01, last month 2026-11
-python scripts/backfill_gdelt.py 2024-01-01 2026-11-01   # first day, last day; end date excluded
+python scripts/backfill_usgs.py                                         # study period from config.py
+python scripts/backfill_gdelt.py --start 2025-03-01 --end 2025-04-01     # a shorter range, end excluded
 ```
 
 Load to HDFS (Parquet) and Hive tables `seismic.usgs_history`, `seismic.gdelt_history`,
