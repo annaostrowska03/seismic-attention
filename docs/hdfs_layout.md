@@ -9,7 +9,7 @@ All Hive tables are **external**: dropping a table never deletes its files.
 |---|---|---|---|
 | `/raw/<source>/date=YYYY-MM-DD/` | NiFi | as received (JSON lines) | raw zone: unchanged input, replay source |
 | `/curated/<source>/...` | Spark jobs | Parquet | cleaned data, features |
-| `/history/<table>/` | `scripts/load_history.py` | Parquet | one-off backfill 2023-2025 (USGS, GDELT) for labels and training |
+| `/history/<table>/` | `scripts/load_history.py` | Parquet | one-off backfill of the study period (`src/seismic_attention/config.py`, USGS, GDELT) for labels and training |
 | `/checkpoints` | Spark Structured Streaming | – | streaming state |
 
 **Team convention for the raw zone:** one folder per UTC day, `date=YYYY-MM-DD`. Hive reads the folder name as the
