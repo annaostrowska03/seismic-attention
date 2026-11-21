@@ -147,7 +147,7 @@ services:
       - -c
       - |
         hdfs dfsadmin -safemode wait &&
-        hdfs dfs -mkdir -p /raw/usgs /raw/bsky /raw/gdelt /history /checkpoints /tmp/hive /user/hive/warehouse &&
+        hdfs dfs -mkdir -p /raw/usgs /raw/bsky /raw/gdelt /raw/gdelt_files /history /checkpoints /tmp/hive /user/hive/warehouse &&
         hdfs dfs -chmod -R 777 /raw /history /checkpoints /tmp /user
 
   # ---------- Hive (metastore on PostgreSQL + HiveServer2) ----------
