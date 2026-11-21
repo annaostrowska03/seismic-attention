@@ -7,14 +7,12 @@ from pyspark.sql import functions as F
 
 sys.path.insert(0, "/opt/app/src")
 from seismic_attention.features import SPARK_SCHEMA, usgs_features
+from seismic_attention.labels import MIN_FILES, WINDOW_H, article_places
+from seismic_attention.labels import coverage as label_coverage
 
 RADII_KM = [100, 150, 200, 250]
 RADIUS_KM = max(RADII_KM)
-WINDOW_H = 48
-MIN_FILES = 173 # 90% of the 192 GDELT files in 48 h; quakes with fewer are not labelled
 START, END = "2024-01-01", "2026-11-21"
-EARTH_RADIUS_KM = 6371.0
-KM_PER_DEG_LAT = 111.0
 OUT_DIR = "/opt/app/data/processed/eda_history"
 
 spark = (
@@ -25,15 +23,6 @@ spark = (
     .getOrCreate()
 )
 spark.sparkContext.setLogLevel("WARN")
-
-
-def distance_km(lat1, lon1, lat2, lon2):
-    # haversine distance between (lat1, lon1) and (lat2, lon2); args are Columns (degrees)
-    dlat = F.radians(lat2 - lat1)
-    dlon = F.radians(lon2 - lon1)
-    a = (F.sin(dlat / 2) ** 2
-         + F.cos(F.radians(lat1)) * F.cos(F.radians(lat2)) * F.sin(dlon / 2) ** 2)
-    return 2 * EARTH_RADIUS_KM * F.asin(F.sqrt(F.least(F.lit(1.0), a)))
 
 
 def bin_floor(col, edges):
@@ -96,18 +85,9 @@ quakes = (
 )
 
 # one row per (article, mentioned location)
-articles = (
-    spark.table("seismic.gdelt_history")
-    .where(in_range("time"))
-    .select("gkg_id", "time", F.explode("locations").alias("loc"))
-    .select("gkg_id", "time",
-            F.col("loc.latitude").alias("lat"), F.col("loc.longitude").alias("lon"))
-    .where(F.col("lat").isNotNull() & F.col("lon").isNotNull())
-    .dropDuplicates()
-)
+articles = article_places(spark.table("seismic.gdelt_history").where(in_range("time")))
 
 files = spark.table("seismic.gdelt_files").where(in_range("time"))
-window = F.expr(f"INTERVAL {WINDOW_H} HOURS")
 
 # 1. earthquakes per month by magnitude
 report("quakes_per_month", quakes.groupBy("month").pivot("mag_bin").count().na.fill(0).orderBy("month"),
@@ -167,66 +147,9 @@ report("gdelt_missing_per_month",
        .na.fill(0).orderBy("month"),
        f"Missing GDELT files per month (of ~{96 * 30} expected; full list in gdelt_missing_files.csv)")
 
-# 3. quake-article matching
-# Equi-join key (day, latitude band) so Spark can hash-join instead of comparing every pair:
-# a 48h window touches at most 3 calendar days, and a band wider than RADIUS_KM means
-# a match is always in the same or a neighbouring band.
-band_deg = RADIUS_KM / KM_PER_DEG_LAT
-q_keys = (
-    quakes.select("id", F.col("time").alias("q_time"), F.col("latitude").alias("q_lat"),
-                  F.col("longitude").alias("q_lon"))
-    .withColumn("day", F.explode(F.sequence(F.to_date("q_time"), F.date_add(F.to_date("q_time"), WINDOW_H // 24))))
-    .withColumn("band", F.explode(F.array(*[F.floor(F.col("q_lat") / band_deg) + d for d in (-1, 0, 1)])))
-)
-a_keys = (
-    articles.withColumn("day", F.to_date("time"))
-    .withColumn("band", F.floor(F.col("lat") / band_deg))
-)
-matches = (
-    q_keys.join(a_keys, ["day", "band"])
-    .where((F.col("time") >= F.col("q_time"))
-           & (F.col("time") <= F.col("q_time") + F.expr(f"INTERVAL {WINDOW_H} HOURS")))
-    .withColumn("dist_km", distance_km(F.col("q_lat"), F.col("q_lon"), F.col("lat"), F.col("lon")))
-    .where(F.col("dist_km") <= RADIUS_KM)
-    .groupBy("id")
-    .agg(F.min("dist_km").alias("min_dist_km"), F.countDistinct("gkg_id").alias("n_articles"))
-)
-
-# label only quakes with almost all GDELT files in their window
-ok_files = files.where(F.col("status") == "ok").select(F.col("time").alias("f_time"), F.to_date("time").alias("day"))
-complete = (
-    quakes.select("id", F.col("time").alias("q_time"))
-    .withColumn("day", F.explode(F.sequence(F.to_date("q_time"), F.date_add(F.to_date("q_time"), WINDOW_H // 24))))
-    .join(ok_files, "day")
-    .where((F.col("f_time") >= F.col("q_time")) & (F.col("f_time") <= F.col("q_time") + window))
-    .groupBy("id").count()
-    .where(F.col("count") >= MIN_FILES)
-    .select("id", F.lit(True).alias("gdelt_complete"))
-)
-
-# aftershock = a quake of the same or larger magnitude within RADIUS_KM in the WINDOW_H before
-# articles about the main shock would make it look covered
-earlier = quakes.select(F.col("time").alias("o_time"), F.col("mag").alias("o_mag"),
-                        F.col("latitude").alias("o_lat"), F.col("longitude").alias("o_lon"),
-                        F.to_date("time").alias("day"))
-aftershocks = (
-    quakes.select("id", F.col("time").alias("q_time"), F.col("mag").alias("q_mag"),
-                  F.col("latitude").alias("q_lat"), F.col("longitude").alias("q_lon"))
-    .withColumn("day", F.explode(F.sequence(F.date_sub(F.to_date("q_time"), WINDOW_H // 24), F.to_date("q_time"))))
-    .join(earlier, "day")
-    .where((F.col("o_time") < F.col("q_time")) & (F.col("o_time") >= F.col("q_time") - window))
-    .where(F.col("o_mag") >= F.col("q_mag"))
-    .where(distance_km(F.col("q_lat"), F.col("q_lon"), F.col("o_lat"), F.col("o_lon")) <= RADIUS_KM)
-    .select("id").distinct()
-    .withColumn("aftershock", F.lit(True))
-)
-
-coverage = (
-    quakes.join(matches, "id", "left").na.fill(0, ["n_articles"])
-    .join(complete, "id", "left")
-    .join(aftershocks, "id", "left")
-    .na.fill(False, ["gdelt_complete", "aftershock"])
-)
+# 3. quake-article matching, complete GDELT windows and aftershocks (src/seismic_attention/labels.py):
+# matches up to RADIUS_KM, so min_dist_km <= r gives the label for each smaller radius r
+coverage = label_coverage(quakes, articles, files, WINDOW_H, RADIUS_KM, MIN_FILES)
 for r in RADII_KM:
     coverage = coverage.withColumn(f"cov_{r}", F.coalesce(F.col("min_dist_km") <= r, F.lit(False)))
 coverage = (
