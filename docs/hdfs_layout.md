@@ -27,6 +27,7 @@ after `MSCK REPAIR TABLE <table>` (the `create` commands of the scripts below ru
 | | `/history/gdelt_history`, `/history/gdelt_files` | `gdelt_history`, `gdelt_files` | `scripts/load_history.py` |
 | USGS | `/raw/usgs/date=.../usgs-<ingest time>-<id>-<updated>.json` (one event version per file, NiFi flow `nifi/flows/usgs.json`) | `usgs_raw` (nested, as received), view `usgs_raw_flat` (columns of `usgs_history`) | `hive/usgs.sql` (`scripts/hive_usgs.py create`) |
 | | `/history/usgs_history` | `usgs_history` | `scripts/load_history.py` |
+| Labels | `/curated/coverage_labels` (Parquet, one row per earthquake) | `coverage_labels` | `scripts/spark_coverage_labels.py` (rule: `src/seismic_attention/labels.py`) |
 
 `<stamp>` is the time of the GDELT file, `yyyyMMddHHmmss` UTC (one file every 15 minutes).
 
