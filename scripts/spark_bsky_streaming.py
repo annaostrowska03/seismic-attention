@@ -10,15 +10,15 @@ sys.path.insert(0, str(ROOT / "src"))
 from seismic_attention.streaming import unique_posts, minute_counts
 
 
-OUTPUT_PATH = "hdfs://namenode:9000/curated/bsky/stream_minute_parts"
-CHECKPOINT_PATH = "hdfs://namenode:9000/checkpoints/bsky-minute-ms2-parts-v1"
+OUTPUT_PATH = "hdfs://namenode:9000/curated/bsky/stream_minute_parts_real_v1"
+CHECKPOINT_PATH = "hdfs://namenode:9000/checkpoints/bsky-minute-ms2-real-v1"
 
 
 def process_batch(batch, batch_id):
     minutes = minute_counts(batch)
 
     print(f"\nBatch {batch_id}")
-    minutes.orderBy("minute").show(truncate=False)
+    #minutes.orderBy("minute").show(truncate=False)
 
     output = f"{OUTPUT_PATH}/batch_id={batch_id:08d}"
     minutes.write.mode("overwrite").parquet(output)
@@ -41,6 +41,7 @@ def main():
         .option("subscribe", "bsky")
         .option("startingOffsets", "earliest")
         .option("kafka.isolation.level", "read_committed")
+        .option("maxOffsetsPerTrigger", 20000)
         .load()
     )
 
@@ -50,7 +51,7 @@ def main():
         .foreachBatch(process_batch)
         .outputMode("append")
         .option("checkpointLocation", CHECKPOINT_PATH)
-        .trigger(processingTime="5 seconds")
+        .trigger(availableNow=True)
         .start()
     )
 
