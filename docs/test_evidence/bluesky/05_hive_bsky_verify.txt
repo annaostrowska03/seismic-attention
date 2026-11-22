@@ -1,0 +1,13 @@
+Test cases: BSKY-I-05, BSKY-Q-03, BSKY-Q-04
+Command:    python scripts/hive_bsky.py verify
+Run at:     2026-11-22 22:52:25 (local time), 66 s
+Exit code:  0
+------------------------------------------------------------------------
+[  OK] raw_rows             hive=1973106 expected=1973106
+[  OK] raw_files            hive=731 expected=731
+[  OK] unique_posts         hive=1371078 expected=1371078
+[  OK] unique_uri_in_posts  hive=1371078 expected=1371078
+[  OK] in_period            hive=1370530 expected=1370530
+[  OK] clean                hive=1324627 expected=1324627
+[  OK] minute_rows          hive=1052640 expected=1052640
+[  OK] minute_posts         hive=1370530 expected=1370530

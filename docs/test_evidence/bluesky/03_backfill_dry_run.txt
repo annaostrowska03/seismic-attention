@@ -1,0 +1,28 @@
+Test cases: BSKY-Q-02
+Command:    python scripts/bsky_backfill.py --dry-run
+Run at:     2026-11-22 22:51:14 (local time), 2 s
+Exit code:  0
+------------------------------------------------------------------------
+2026-11-22 22:51:16,516 INFO period 2024-01-01 - 2026-01-01, 22 keywords, 6 h windows
+2026-11-22 22:51:17,315 INFO pending windows: earthquake       1
+2026-11-22 22:51:17,315 INFO pending windows: quake            1
+2026-11-22 22:51:17,315 INFO pending windows: 地震               0
+2026-11-22 22:51:17,315 INFO pending windows: sismo            0
+2026-11-22 22:51:17,315 INFO pending windows: terremoto        0
+2026-11-22 22:51:17,315 INFO pending windows: deprem           0
+2026-11-22 22:51:17,315 INFO pending windows: tsunami          0
+2026-11-22 22:51:17,315 INFO pending windows: 震度               0
+2026-11-22 22:51:17,315 INFO pending windows: 津波               0
+2026-11-22 22:51:17,315 INFO pending windows: 緊急地震速報           0
+2026-11-22 22:51:17,315 INFO pending windows: temblor          0
+2026-11-22 22:51:17,315 INFO pending windows: gempa            0
+2026-11-22 22:51:17,315 INFO pending windows: lindol           0
+2026-11-22 22:51:17,315 INFO pending windows: 지진               0
+2026-11-22 22:51:17,315 INFO pending windows: erdbeben         0
+2026-11-22 22:51:17,315 INFO pending windows: séisme           0
+2026-11-22 22:51:17,315 INFO pending windows: σεισμός          0
+2026-11-22 22:51:17,315 INFO pending windows: землетрясение    0
+2026-11-22 22:51:17,315 INFO pending windows: زلزله            0
+2026-11-22 22:51:17,315 INFO pending windows: زلزال            0
+2026-11-22 22:51:17,315 INFO pending windows: aftershock       0
+2026-11-22 22:51:17,315 INFO pending windows: trzęsienie ziemi 0
