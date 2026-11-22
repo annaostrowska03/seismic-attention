@@ -1,4 +1,8 @@
+import io
+import zipfile
 from datetime import datetime, date
+
+import pytest
 
 import backfill_gdelt
 import backfill_usgs
@@ -52,3 +56,30 @@ def test_parse_gkg_keeps_only_earthquake_articles():
         "themes": "NATURAL_DISASTER;NATURAL_DISASTER_EARTHQUAKE;",
         "locations": "1#Chile#CI#CI#-30#-71#CI",
     }
+
+
+class FakeResponse:
+    def __init__(self, status_code, content=b""):
+        self.status_code = status_code
+        self.content = content
+
+    def raise_for_status(self):
+        pass
+
+
+def zipped(text):
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as archive:
+        archive.writestr("file.gkg.csv", text)
+    return buffer.getvalue()
+
+
+@pytest.mark.parametrize("response, status, n_articles", [
+    (FakeResponse(200, zipped(gkg_line("a-1", "NATURAL_DISASTER_EARTHQUAKE;"))), "ok", 1),
+    (FakeResponse(404), "missing", 0),
+    (FakeResponse(200, b"not a zip"), "broken", 0),
+])
+def test_fetch_file_status(monkeypatch, response, status, n_articles):
+    monkeypatch.setattr(backfill_gdelt.requests, "get", lambda url, timeout: response)
+    stamp, result, articles = backfill_gdelt.fetch_file("20261031003000")
+    assert (result, len(articles)) == (status, n_articles)
