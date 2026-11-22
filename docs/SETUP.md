@@ -50,7 +50,8 @@ No `.env` file is needed. If a port is already used on your machine, copy `.env.
 Local-development credentials only; nothing here is meant to be exposed to the internet.
 
 Kafka topics created automatically: `usgs`, `bsky`, `gdelt`.
-HDFS layout created automatically: `/raw/{usgs,bsky,gdelt}`, `/history`, `/checkpoints`, `/tmp/hive`, `/user/hive/warehouse`.
+HDFS layout created automatically: `/raw/{usgs,bsky,gdelt,gdelt_files}`, `/history`, `/checkpoints`, `/tmp/hive`, `/user/hive/warehouse`
+(what goes where: [hdfs_layout.md](hdfs_layout.md)).
 
 ## Starting only what you need
 
@@ -118,7 +119,7 @@ docker compose exec postgres psql -U seismic -d seismic
 **NiFi -> Kafka / HDFS**
 
 - Kafka processors: bootstrap servers `kafka:9092`.
-- PutHDFS processor: Hadoop Configuration Resources `/opt/nifi/hadoop-conf/core-site.xml,/opt/nifi/hadoop-conf/hdfs-site.xml`, directory e.g. `/raw/usgs/${now():format('yyyy/MM/dd/HH')}`.
+- PutHDFS processor: Hadoop Configuration Resources `/opt/nifi/hadoop-conf/core-site.xml,/opt/nifi/hadoop-conf/hdfs-site.xml`, directory `/raw/<source>/date=YYYY-MM-DD`, e.g. `/raw/usgs/date=${now():format('yyyy-MM-dd', 'UTC')}` (team convention, see [hdfs_layout.md](hdfs_layout.md)).
 - Flows live in a Docker volume and are not shared via Git. After finishing a flow, right-click the process group -> **Download flow definition** and commit the JSON to `nifi/flows/`; teammates import it with **Upload process group** on the canvas.
 
 ## Troubleshooting
