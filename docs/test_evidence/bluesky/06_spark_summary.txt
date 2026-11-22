@@ -1,0 +1,31 @@
+Test cases: BSKY-I-04, BSKY-Q-01, BSKY-Q-05
+Command:    docker compose exec spark-master /opt/spark/bin/spark-submit /opt/app/scripts/spark_bsky_preprocess.py
+Run at:     2026-11-21 19:27:32 (local time), log spark_bsky_20261121_192513.log
+------------------------------------------------------------------------
+SUMMARY {"clean": 1324627, "corrupt_rows": 0, "first_t_event": "2024-01-01T00:00:02", "in_period": 1370530, "in_period_reindexed": 6333, "in_period_time_source_createdAt": 1352875, "in_period_time_source_indexedAt": 17655, "in_period_unrelated_candidate": 21290, "input": "hdfs://namenode:9000/raw/bsky", "last_t_event": "2025-12-31T23:59:45.576000", "out_of_period": 548, "output": "hdfs://namenode:9000/curated/bsky", "period": ["2024-01-01", "2026-01-01"], "raw_files": 731, "raw_rows": 1973106, "raw_rows_with_uri": 1973106, "unique_posts": 1371078, "unparsable_created_at": 0, "unparsable_indexed_at": 0}
+
+data/processed/bsky_summary.json:
+{
+  "clean": 1324627,
+  "corrupt_rows": 0,
+  "first_t_event": "2024-01-01T00:00:02",
+  "in_period": 1370530,
+  "in_period_reindexed": 6333,
+  "in_period_time_source_createdAt": 1352875,
+  "in_period_time_source_indexedAt": 17655,
+  "in_period_unrelated_candidate": 21290,
+  "input": "hdfs://namenode:9000/raw/bsky",
+  "last_t_event": "2025-12-31T23:59:45.576000",
+  "out_of_period": 548,
+  "output": "hdfs://namenode:9000/curated/bsky",
+  "period": [
+    "2024-01-01",
+    "2026-01-01"
+  ],
+  "raw_files": 731,
+  "raw_rows": 1973106,
+  "raw_rows_with_uri": 1973106,
+  "unique_posts": 1371078,
+  "unparsable_created_at": 0,
+  "unparsable_indexed_at": 0
+}

@@ -1,0 +1,11 @@
+Test cases: BSKY-I-01
+Command:    python scripts/smoke_test.py
+Run at:     2026-11-22 22:50:08 (local time), 27 s
+Exit code:  0
+------------------------------------------------------------------------
+[ OK ] postgres
+[ OK ] kafka
+[ OK ] hdfs
+[ OK ] hive
+[ OK ] spark
+[ OK ] nifi

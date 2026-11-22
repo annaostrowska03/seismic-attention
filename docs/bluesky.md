@@ -187,6 +187,7 @@ F = functional (automated, `pytest`), I = integration (pipeline run), Q = data q
 Automated tests run on every pull request (GitHub Actions) and locally with
 `python scripts/run_spark_tests.py`.
 Actual results: run of 2026-11-21 on the full 2024–2025 data (33/33 automated tests passed).
+Logs and screenshots of the checks: [test_evidence/bluesky/](test_evidence/bluesky/README.md).
 
 | ID | Objective | Steps | Expected result | Actual result |
 |---|---|---|---|---|
@@ -211,7 +212,7 @@ Actual results: run of 2026-11-21 on the full 2024–2025 data (33/33 automated 
 | BSKY-I-03 | NiFi publishes every post to Kafka | `python scripts/verify_bsky_ingest.py` (Kafka checks: `read_committed` count, JSON parse) | messages = local lines; 0 invalid | 1,973,106 = 1,973,106; 0 invalid |
 | BSKY-I-04 | Spark job processes the HDFS data | run the job (section 7, step 3) | finishes; summary file written | finished in 141 s; summary written |
 | BSKY-I-05 | Hive shows the same data as Spark | `python scripts/hive_bsky.py verify` | 8/8 checks OK | 8/8 OK |
-| BSKY-I-06 | All tests pass in CI | GitHub Actions run on the pull request | all passed, none skipped | – |
+| BSKY-I-06 | All tests pass in CI | GitHub Actions run on the pull request | all passed, none skipped | passed (run #11 of PR #5; the job fails on any skipped test) |
 | BSKY-Q-01 | Raw files are readable | `corrupt_rows` in the summary | 0 | 0 |
 | BSKY-Q-02 | Every day of the period was downloaded | `--dry-run`; `raw_files` in the summary | 0 pending windows, except the known gap (section 9); 731 daily files | 0 pending except the known gap (earthquake 1, quake 1); 731 files |
 | BSKY-Q-03 | Posts are unique after cleaning | Hive: `count(DISTINCT uri)` = `count(*)` on `bsky_posts` | equal | 1,371,078 = 1,371,078 |

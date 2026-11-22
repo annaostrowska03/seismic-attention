@@ -1,0 +1,16 @@
+Test cases: USGS-Q-01, GDELT-Q-01, GDELT-Q-02
+Command:    Python count over data/raw/usgs_history and data/raw/gdelt_history, 2024-01-01 .. 2025-12-31
+Run at:     2026-11-22 23:15:06 (local time)
+------------------------------------------------------------------------
+USGS 2024-2025: events 14958, unique ids 14958, per day avg 20.5, min 3, max 422 (2025-07-30)
+  types {'earthquake': 14956, 'landslide': 2} | status {'reviewed': 14958}
+  magnitude {'M4.5-5': 11321, 'M5-6': 3393, 'M6-7': 218, 'M7+': 26}
+  magType {'mb': 11890, 'mww': 2646, 'mwr': 345, 'ml': 40}
+  missing: {'felt': '81.8%', 'cdi': '81.8%', 'mmi': '89.6%', 'alert': '91.1%', 'tsunami': '0.0%', 'place': '0.0%'} tsunami=1: 186
+  properties (26): alert, cdi, code, detail, dmin, felt, gap, ids, mag, magType, mmi, net, nst, place, rms, sig, sources, status, time, title, tsunami, type, types, tz, updated, url
+
+GDELT articles 2024-2025: 349614, per day avg 478.3, min 108, max 5689 (2025-07-30), days with file 714
+  without locations 5.6%, locations per article 5.8, distinct sources 8718
+
+GDELT files 2024-2025: 70176 (expected 70176), status {'ok': 68493, 'missing': 1683}, missing 2.40%
+  missing by month {'202407': 1, '202409': 1, '202501': 1, '202503': 2, '202504': 2, '202505': 2, '202506': 1569, '202507': 105}

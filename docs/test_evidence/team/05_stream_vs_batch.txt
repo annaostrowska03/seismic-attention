@@ -1,0 +1,9 @@
+Test cases: STR-I-01
+Command:    docker compose exec spark-master /opt/spark/bin/spark-submit /opt/app/scripts/spark_bsky_streaming.py
+            (topic bsky from the earliest offset, new checkpoint, trigger availableNow, maxOffsetsPerTrigger 20000)
+            then a Spark comparison of /curated/bsky/stream_minute_parts_real_v1 (summed per minute)
+            with the batch table /curated/bsky/minute (bsky_minute, minutes with posts)
+Run at:     2026-11-22 23:14 – 23:18 (stream, 240 s), comparison 23:20 (local time)
+------------------------------------------------------------------------
+stream micro-batches: 99 (1,973,106 Kafka messages)
+COMPARE {'minutes_with_posts': 539714, 'stream_posts': 1370530, 'batch_posts': 1370530, 'stream_clean': 1324627, 'batch_clean': 1324627, 'minutes_different': 0}
