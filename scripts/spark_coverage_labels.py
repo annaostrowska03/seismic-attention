@@ -30,8 +30,9 @@ spark = (
 spark.sparkContext.setLogLevel("WARN")
 
 
-def in_period(c):
-    return (F.col(c) >= F.lit(PERIOD_START).cast("timestamp")) & (F.col(c) < F.lit(PERIOD_END).cast("timestamp"))
+def in_period(c, extra_h=0):
+    end = F.lit(PERIOD_END).cast("timestamp") + F.expr(f"INTERVAL {extra_h} HOURS")
+    return (F.col(c) >= F.lit(PERIOD_START).cast("timestamp")) & (F.col(c) < end)
 
 
 quakes = (
@@ -39,8 +40,9 @@ quakes = (
     .where((F.col("type") == "earthquake") & in_period("time"))
     .dropDuplicates(["id"])
 )
-articles = article_places(spark.table("seismic.gdelt_history").where(in_period("time")))
-files = spark.table("seismic.gdelt_files").where(in_period("time"))
+# GDELT up to WINDOW_H after the period: the window of a quake on the last day ends in the next period
+articles = article_places(spark.table("seismic.gdelt_history").where(in_period("time", WINDOW_H)))
+files = spark.table("seismic.gdelt_files").where(in_period("time", WINDOW_H))
 
 labels = coverage(quakes, articles, files).select(*COLUMNS)
 labels.coalesce(1).write.mode("overwrite").parquet(PATH)
