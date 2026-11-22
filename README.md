@@ -42,6 +42,7 @@ GitHub Actions runs the full test suite on every pull request (`.github/workflow
 
 - [docs/SETUP.md](docs/SETUP.md) – Docker stack setup
 - [docs/bluesky.md](docs/bluesky.md) – Bluesky source: acquisition, processing rules, Hive tables, test cases
+- [docs/streaming.md](docs/streaming.md) – Spark Structured Streaming: implementation, execution and validation
 
 ## History
 
