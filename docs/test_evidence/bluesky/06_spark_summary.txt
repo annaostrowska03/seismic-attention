@@ -1,4 +1,4 @@
-Test cases: BSKY-I-04, BSKY-Q-01, BSKY-Q-05
+Test cases: BSKY-I-03, BSKY-Q-01, BSKY-Q-05
 Command:    docker compose exec spark-master /opt/spark/bin/spark-submit /opt/app/scripts/spark_bsky_preprocess.py
 Run at:     2026-11-21 19:27:32 (local time), log spark_bsky_20261121_192513.log
 ------------------------------------------------------------------------

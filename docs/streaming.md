@@ -130,7 +130,7 @@ To run the complete automated suite:
 python scripts/run_spark_tests.py
 ```
 
-The full suite was reported as **52 passed** in the MS2 testing session.
+The full suite (all modules, 82 tests) passes: see [testing.md](testing.md).
 
 ### 5.2 Full-dataset integration test
 
@@ -148,54 +148,26 @@ Both global totals matched exactly. A full outer join on `minute`, with missing 
 
 ### 5.3 Reproduce the batch–stream comparison
 
-After completing the batch and streaming jobs, start an interactive Spark shell:
+After completing the batch and streaming jobs, run the comparison script (test STR-Q-01):
 
 ```bash
-docker compose exec spark-master /opt/spark/bin/pyspark
+docker compose exec spark-master /opt/spark/bin/spark-submit /opt/app/scripts/compare_stream_batch.py
 ```
 
-Then run:
+It sums the per-micro-batch parts of `/curated/bsky/stream_minute_parts_real_v1` by `minute`, joins them
+with the batch table `/curated/bsky/minute` (full outer join, missing counts = 0) and prints one
+`COMPARE {...}` line; the exit code is 1 if any minute differs.
 
-```python
-from pyspark.sql import functions as F
+**Observed output (2026-11-25):**
 
-stream = (
-    spark.read.parquet("hdfs://namenode:9000/curated/bsky/stream_minute_parts_real_v1")
-    .groupBy("minute")
-    .agg(
-        F.sum("n_posts").alias("n_posts"),
-        F.sum("n_clean").alias("n_clean"),
-    )
-)
-
-stream.agg(
-    F.sum("n_posts").alias("total_posts"),
-    F.sum("n_clean").alias("total_clean"),
-).show()
-
-batch = (
-    spark.read.parquet("hdfs://namenode:9000/curated/bsky/minute")
-    .select(
-        "minute",
-        F.col("n_posts").alias("batch_posts"),
-        F.col("n_posts_clean").alias("batch_clean"),
-    )
-)
-
-comparison = (
-    batch.join(stream, on="minute", how="full_outer")
-    .fillna(0, subset=["batch_posts", "batch_clean", "n_posts", "n_clean"])
-)
-
-differences = comparison.where(
-    (F.col("batch_posts") != F.col("n_posts"))
-    | (F.col("batch_clean") != F.col("n_clean"))
-)
-
-differences.count()
+```text
+COMPARE {"batch_clean": 1324627, "batch_posts": 1370530, "minutes_different": 0, "minutes_with_posts": 539714, "stream_clean": 1324627, "stream_posts": 1370530}
+[  OK] total posts equal
+[  OK] total clean posts equal
+[  OK] no minute differs
 ```
 
-**Observed output:** `total_posts = 1370530`, `total_clean = 1324627`, `differences.count() = 0`.
+Log: [test_evidence/team/05_stream_vs_batch.txt](test_evidence/team/05_stream_vs_batch.txt).
 
 ## 6. Limitations and next steps
 
@@ -205,5 +177,9 @@ differences.count()
 - **Not the complete batch schema.** The streaming output includes post and clean-post counts, but not the batch table's distinct-author or unrelated-post metrics.
 - **Deduplication policy.** Streaming keeps the first observed version of a URI, while batch preprocessing chooses a copy using daily-file ordering. Their minute-level counts matched on the tested dataset, but this does not establish equivalence for all possible input orders or updated post versions.
 - **Checkpoint and output consistency.** The Parquet `foreachBatch` sink is not a transactional sink spanning Kafka offsets, Spark state and HDFS. Deterministic batch paths help with retries, but output files and the checkpoint must be managed together; avoid deleting either one independently.
+
+**Next step (MS3).** In the planned simulated run ([architecture.md](architecture.md), section 5) the job
+runs continuously (processing-time trigger instead of `availableNow`), uses an event-time watermark to bound
+the deduplication state and writes the minute counts to the real-time view in Apache Cassandra.
 
 For details of the source data, quality rules, HDFS/Hive tables and NiFi ingestion, see [Bluesky data source](bluesky.md).

@@ -1,0 +1,30 @@
+Test cases: HIST-Q-01, HIST-Q-02, HIST-Q-03, HIST-Q-04
+Command:    docker compose exec spark-master /opt/spark/bin/spark-submit /opt/app/scripts/verify_history.py
+Run at:     2026-11-25 03:26:22 (local time), 47 s
+Exit code:  1 (expected: one check fails because of an error in the source data, see below)
+------------------------------------------------------------------------
+OK   usgs rows = downloaded events: 22033 (expected 22033)
+OK   gdelt rows = downloaded articles: 465320 (expected 465320)
+OK   gdelt file log rows = downloaded statuses: 101280 (expected 101280)
+OK   usgs duplicate ids: 0 (expected 0)
+OK   usgs empty id or time: 0 (expected 0)
+OK   usgs magnitude empty or below 4.5: 0 (expected 0)
+OK   usgs coordinates out of range: 0 (expected 0)
+OK   usgs depth empty or outside -10..800 km: 0 (expected 0)
+OK   usgs updated before origin time: 0 (expected 0)
+FAIL gdelt duplicate article ids: 5 (expected 0)
+OK   gdelt articles without earthquake theme: 0 (expected 0)
+OK   gdelt locations out of range: 0 (expected 0)
+OK   gdelt articles not from an ok file: 0 (expected 0)
+OK   gdelt file status other than ok/missing/broken: 0 (expected 0)
+OK   gdelt days without 96 files: 0 (expected 0)
+OK   gdelt articles in missing/broken files: 0 (expected 0)
+
+The 5 duplicate ids, checked in data/raw/gdelt_history/articles (all in GDELT file 20250801184500):
+each id is used by GDELT for two different articles of guernicamag.com with different URLs, e.g.
+  20250801184500-1069  https://www.guernicamag.com/rec_room_francis_reynolds_alan/
+                       https://www.guernicamag.com/the-age-of-loneliness/
+This is an error of the source, not of the loading: both rows are real articles and are kept.
+The coverage label counts distinct gkg_id, so such a pair can count as one article instead of two:
+n_articles of an earthquake can be lower by 1, but "covered" cannot change, because it needs only one
+matching article.

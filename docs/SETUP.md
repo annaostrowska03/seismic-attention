@@ -8,7 +8,8 @@ Works on macOS (Intel and Apple Silicon), Windows (Docker Desktop, WSL2 backend)
 - Docker Desktop 4.30+ (or Docker Engine + Compose v2). Check: `docker compose version`
 - Docker Desktop memory: **10 GB recommended** (Settings -> Resources). 8 GB is enough if you start only a subset (see below).
 - About 15 GB of free disk space. The first `docker compose up` builds two images and downloads about 5 GB.
-- Python 3.11+ (only for the smoke test).
+- Python 3.11+ on the host, for the scripts in `scripts/` and the tests (`pip install -r requirements.txt`).
+  The Spark containers have their own Python 3.8, see [Python versions](#python-versions).
 
 ## Start
 
@@ -108,12 +109,15 @@ docker compose exec spark-master /opt/spark/bin/spark-submit /opt/app/scripts/<j
 docker compose exec spark-master /opt/spark/bin/pyspark          # interactive shell
 ```
 
-The Spark containers run Python 3.10, so Spark jobs must not use newer syntax than that.
+The Spark containers run Python 3.8, so code used by Spark jobs must not use newer syntax (see below).
 
 **PostgreSQL**
 
+PostgreSQL is only the database of the Hive metastore (database `metastore`, table definitions). It holds no
+project data; the serving layer is planned in Apache Cassandra (MS3).
+
 ```bash
-docker compose exec postgres psql -U seismic -d seismic
+docker compose exec postgres psql -U seismic -d metastore    # tables of the Hive metastore
 ```
 
 **NiFi -> Kafka / HDFS**
@@ -121,6 +125,21 @@ docker compose exec postgres psql -U seismic -d seismic
 - Kafka processors: bootstrap servers `kafka:9092`.
 - PutHDFS processor: Hadoop Configuration Resources `/opt/nifi/hadoop-conf/core-site.xml,/opt/nifi/hadoop-conf/hdfs-site.xml`, directory `/raw/<source>/date=YYYY-MM-DD`, e.g. `/raw/usgs/date=${now():format('yyyy-MM-dd', 'UTC')}` (team convention, see [hdfs_layout.md](hdfs_layout.md)).
 - Flows live in a Docker volume and are not shared via Git. After finishing a flow, right-click the process group -> **Download flow definition** and commit the JSON to `nifi/flows/`; teammates import it with **Upload process group** on the canvas.
+
+## Python versions
+
+| Where | Python | Used for |
+|---|---|---|
+| Host (your laptop), GitHub Actions | 3.11+ | backfill and helper scripts in `scripts/`, `pytest` |
+| Spark containers (`apache/spark:3.5.3-python3`) | 3.8.10 | Spark jobs (`spark-submit`), `python scripts/run_spark_tests.py` |
+
+The Spark image is the official Apache image and ships Python 3.8; Spark 3.5 supports it. We keep it instead of
+building our own image with a newer Python, because the pipeline was run and checked on this image. Therefore
+everything that runs inside Spark (`src/seismic_attention/` and the `spark_*.py`, `load_history.py`,
+`eda_history.py`, `verify_history.py` and `compare_stream_batch.py` scripts) must stay Python 3.8 compatible:
+no `match`, no `X | Y` type unions, no `list[str]` annotations without `from __future__ import annotations`.
+`python scripts/run_spark_tests.py` runs the whole test suite with this Python 3.8, so such a mistake shows up
+there.
 
 ## Troubleshooting
 
@@ -146,3 +165,4 @@ docker compose exec postgres psql -U seismic -d seismic
 | `conf/hadoop/` | `core-site.xml`, `hdfs-site.xml` shared by HDFS and NiFi |
 | `conf/spark/spark-defaults.conf` | Spark defaults |
 | `scripts/smoke_test.py` | Health check of all services |
+| `scripts/run_spark_tests.py` | Runs all tests in a one-off Spark container (Java and Python 3.8 included) |

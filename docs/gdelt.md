@@ -13,6 +13,9 @@ the rows with an earthquake theme: `themes LIKE '%EARTHQUAKE%'`. In our data eve
 
 GDELT is the source of the **label**: whether an earthquake got media coverage (section 6).
 
+The proof of concept uses only the history; the live NiFi flow is implemented and tested, but it is kept
+for a possible production system.
+
 ## 2. Pipeline
 
 ```
@@ -199,28 +202,35 @@ for all 14 956 earthquakes in `n_articles`, `min_dist_km`, `gdelt_complete` and 
 
 ## 11. Test cases
 
-F = functional (`pytest`, every pull request in GitHub Actions and `python scripts/run_spark_tests.py`),
-I = integration, Q = data quality.
+IDs as in the MS2 test documentation ([testing.md](testing.md)). F = functional (`pytest`, every pull
+request in GitHub Actions and `python scripts/run_spark_tests.py`), I = integration, Q = data quality.
+The history download and loading (HIST-*) are listed in [testing.md](testing.md).
 
 | ID | Objective | Steps | Expected result | Actual result |
 |---|---|---|---|---|
-| GDELT-F-01 | The flow takes the GKG file from `lastupdate.txt` | `test_gkg_url_is_the_gkg_line_only`, `test_gdelt_stamp_is_the_time_of_the_gkg_file`, `test_https_url_is_accepted` | GKG address and file time only | passed |
-| GDELT-F-02 | No GKG line, no download | `test_no_gkg_line_gives_no_match`, `test_translated_file_has_no_stamp` | no match | passed |
+| GDELT-F-01 | The flow takes only the GKG line of `lastupdate.txt` | `test_gkg_url_is_the_gkg_line_only`, `test_https_url_is_accepted`, `test_no_gkg_line_gives_no_match` | GKG address matched, other lines not | passed |
+| GDELT-F-02 | File time read from the URL | `test_gdelt_stamp_is_the_time_of_the_gkg_file`, `test_translated_file_has_no_stamp` | stamp `yyyyMMddHHmmss`; translated files ignored | passed |
 | GDELT-F-03 | Raw zone follows the team convention | `test_hdfs_directories_follow_the_team_convention` | `/raw/gdelt/date=`, `/raw/gdelt_files/date=` | passed |
-| GDELT-F-04 | Distance and the 250 km boundary | `tests/test_labels.py` (Haversine, 249 vs 251 km) | match / no match | passed |
-| GDELT-F-05 | Both ends of the 48 h window are included | `tests/test_labels.py` (window boundaries) | articles at t and t + 48 h match | passed |
-| GDELT-F-06 | Articles are counted, not places; band edges | `tests/test_labels.py` | `countDistinct(gkg_id)`; quake at a band edge matched | passed |
-| GDELT-F-07 | Gap rule | `tests/test_labels.py` (172 vs 173 files; covered quake with gaps) | NULL below 173, also for covered quakes | passed |
-| GDELT-F-08 | Aftershock flag | `tests/test_labels.py` (strictly earlier, magnitude ≥, radius) | flag only when all three hold | passed |
-| GDELT-I-01 | Flow output equals the backfill | flow and `parse_gkg` on the same 2 live files | identical rows and fields | identical |
-| GDELT-I-02 | Duplicate and missing files | run twice; artificial 404 | second run skipped; `missing` line | as expected |
-| GDELT-I-03 | Kafka gets every article | `read_committed` consumer | messages = rows, valid JSON | as expected |
-| GDELT-I-04 | Hive agrees with the file log | `python scripts/hive_gdelt.py verify` | all checks OK | OK |
-| GDELT-I-05 | Labels agree with an independent run | full outer join of `coverage_labels` and `quake_coverage` of `eda_history.py` | 0 differences | 0 (after the end-of-period fix) |
-| GDELT-Q-01 | Every expected file is in the history log | `gdelt_files` rows = days × 96 | 101 280 | 101 280 |
-| GDELT-Q-02 | Missing files are visible | `gdelt_files` with `missing` | listed, used by the gap rule | 1 685 |
+| LAB-F-01 | Distance between two points | `tests/test_labels.py::test_distance_*` (3 tests) | 0 for the same point; ≈111 km per degree of latitude; shorter for longitude near the poles | passed |
+| LAB-F-02 | Article places | `test_article_places_drops_places_without_coordinates_and_duplicates` | places without coordinates and duplicates dropped | passed |
+| LAB-F-03 | Matching articles with earthquakes | `test_match_*` (5 tests) | both ends of the 48 h window included; 250 km limit (249 vs 251 km); articles counted, not places; nearest place taken; band border and midnight handled | passed |
+| LAB-F-04 | Completeness of the GDELT window | `test_window_files_counts_only_ok_files_in_window`, `test_full_window_has_193_files_with_both_ends`, `test_label_threshold_173_files` | only `ok` files in the window counted; label from 173 files | passed |
+| LAB-F-05 | Unknown label for incomplete windows | `test_incomplete_window_gives_null_also_for_covered_quake`, `test_quake_without_files_or_articles` | NULL below 173 files, also when an article was found | passed |
+| LAB-F-06 | Aftershock flag | `test_aftershocks`, `test_aftershock_flag_in_coverage` | flag only for a strictly earlier quake, at most 48 h before, magnitude ≥, within 250 km | passed |
+| LAB-F-07 | Other earthquake columns kept | `test_coverage_keeps_extra_quake_columns` | input columns (e.g. `place`) are in the output | passed |
+| LAB-F-08 | The label tests catch errors | 6 deliberate changes in `labels.py`, one at a time (see below), run the tests | each change makes a test fail | 6/6 caught (21.11) |
+| GDELT-I-01 | Flow output equals the backfill | flow and `parse_gkg` of `backfill_gdelt.py` on the same 2 live files | identical rows and fields | identical (21.11) |
+| GDELT-I-02 | Articles in HDFS and Kafka | `hdfs dfs -ls -R /raw/gdelt`; `read_committed` consumer on topic `gdelt` | file in the `date=` folder of the file time; one valid JSON message per article | as expected (21.11) |
+| GDELT-I-03 | Duplicate and missing files | run the flow twice on the same file; request a file that does not exist | second run dropped by `DetectDuplicate`; HTTP 404 gives a `missing` log line | as expected (21.11) |
+| GDELT-Q-01 | Raw articles agree with the file log | `python scripts/hive_gdelt.py verify` | all checks OK | 6/6 OK (21.11) |
+| LAB-I-01 | Label table built | `spark-submit scripts/spark_coverage_labels.py` | one row per earthquake of the study period; table `seismic.coverage_labels` | 14 956 earthquakes, 391 with NULL label (22.11) |
+| LAB-Q-01 | Labels agree with an independent run | full outer join of `coverage_labels` and `quake_coverage` of `eda_history.py`, limited to 2024–2025 | 0 differences in `n_articles`, `min_dist_km`, window completeness and aftershock flag | 0 after the end-of-period fix (first 27 differences on 30–31.12.2025) (22.11) |
+| LAB-Q-02 | One row per earthquake, NULL only for incomplete windows | Hive: rows, distinct `id`, NULL labels, incomplete windows of `coverage_labels` | rows = distinct ids; NULL labels = incomplete windows | 14 956 = 14 956; 391 = 391 (22.11) |
 
-Strength of `tests/test_labels.py` was checked with 6 deliberate changes in `labels.py` (`<` instead
-of `<=`, the rejected gap rule, threshold 172, no neighbouring bands, `count` instead of
-`countDistinct`, `>` instead of `>=` for aftershocks); each one makes the matching test fail.
-Not tested: the `broken` status (hard to produce).
+Strength of `tests/test_labels.py` (LAB-F-08) was checked with 6 deliberate changes in `labels.py`
+(`<` instead of `<=` at the window end, the rejected gap rule that keeps positives in incomplete windows,
+threshold 172, no neighbouring bands, `count` instead of `countDistinct`, `>` instead of `>=` for
+aftershocks); each one makes the matching test fail. Not tested: the `broken` status of the live flow
+(hard to produce).
+
+Logs: [test_evidence/team/](test_evidence/team/README.md).

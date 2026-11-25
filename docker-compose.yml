@@ -20,7 +20,8 @@ x-spark-common: &spark-common
     - spark_ivy:/root/.ivy2
 
 services:
-  # ---------- PostgreSQL: Hive metastore DB + serving layer ----------
+  # ---------- PostgreSQL: database of the Hive metastore only ----------
+  # (table definitions, no project data; the serving layer is planned in Apache Cassandra, MS3)
   postgres:
     image: postgres:16-alpine
     restart: unless-stopped

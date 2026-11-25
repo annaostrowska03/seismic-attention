@@ -1,4 +1,4 @@
-Test cases: STR-I-01
+Test cases: STR-I-01, STR-Q-01
 Command:    docker compose exec spark-master /opt/spark/bin/spark-submit /opt/app/scripts/spark_bsky_streaming.py
             (topic bsky from the earliest offset, new checkpoint, trigger availableNow, maxOffsetsPerTrigger 20000)
             then a Spark comparison of /curated/bsky/stream_minute_parts_real_v1 (summed per minute)
@@ -7,3 +7,15 @@ Run at:     2026-11-22 23:14 – 23:18 (stream, 240 s), comparison 23:20 (local 
 ------------------------------------------------------------------------
 stream micro-batches: 99 (1,973,106 Kafka messages)
 COMPARE {'minutes_with_posts': 539714, 'stream_posts': 1370530, 'batch_posts': 1370530, 'stream_clean': 1324627, 'batch_clean': 1324627, 'minutes_different': 0}
+
+========================================================================
+Repeated with the comparison script (same stream output, same batch table)
+Test case:  STR-Q-01
+Command:    docker compose exec spark-master /opt/spark/bin/spark-submit /opt/app/scripts/compare_stream_batch.py
+Run at:     2026-11-25 03:24 (local time), 18 s
+Exit code:  0
+------------------------------------------------------------------------
+COMPARE {"batch_clean": 1324627, "batch_posts": 1370530, "minutes_different": 0, "minutes_with_posts": 539714, "stream_clean": 1324627, "stream_posts": 1370530}
+[  OK] total posts equal
+[  OK] total clean posts equal
+[  OK] no minute differs

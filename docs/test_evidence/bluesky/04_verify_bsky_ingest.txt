@@ -1,4 +1,4 @@
-Test cases: BSKY-I-02, BSKY-I-03
+Test cases: BSKY-I-01, BSKY-I-02
 Command:    python scripts/verify_bsky_ingest.py
 Run at:     2026-11-22 22:51:17 (local time), 68 s
 Exit code:  0

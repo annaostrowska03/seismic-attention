@@ -1,4 +1,4 @@
-Test cases: BSKY-I-05, BSKY-Q-03, BSKY-Q-04
+Test cases: BSKY-I-04, BSKY-Q-03, BSKY-Q-04
 Command:    python scripts/hive_bsky.py verify
 Run at:     2026-11-22 22:52:25 (local time), 66 s
 Exit code:  0

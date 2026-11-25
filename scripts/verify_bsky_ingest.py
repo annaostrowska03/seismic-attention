@@ -4,7 +4,7 @@ Usage (from the repo root, stack running, after the NiFi flow has processed all 
     python scripts/verify_bsky_ingest.py             # HDFS and Kafka
     python scripts/verify_bsky_ingest.py --no-kafka  # HDFS only (reading Kafka takes a few minutes)
 
-Checks (test cases BSKY-I-02 and BSKY-I-03 in docs/bluesky.md):
+Checks (test cases BSKY-I-01 and BSKY-I-02 in docs/bluesky.md):
     HDFS   the same daily files, with the same sizes, as data/raw/bsky, in date=YYYY-MM-DD folders
     Kafka  committed messages in topic "bsky" = lines in the local files; every message is valid JSON
 """

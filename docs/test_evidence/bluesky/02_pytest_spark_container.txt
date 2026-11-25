@@ -1,4 +1,4 @@
-Test cases: BSKY-F-01..F-16 (all automated tests of the repository)
+Test cases: BSKY-F-01..F-16 (all 75 automated tests of the repository on 22.11; current run: ../pytest_all.txt)
 Command:    python scripts/run_spark_tests.py -vv -rs
 Run at:     2026-11-22 23:03:39 (local time), 37 s
 Exit code:  0
