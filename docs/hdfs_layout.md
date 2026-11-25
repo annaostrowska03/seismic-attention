@@ -9,7 +9,7 @@ All Hive tables are **external**: dropping a table never deletes its files.
 |---|---|---|---|
 | `/raw/<source>/date=YYYY-MM-DD/` | NiFi | as received (JSON lines) | raw zone: unchanged input, replay source |
 | `/curated/<source>/...` | Spark jobs | Parquet | cleaned data, features |
-| `/history/<table>/` | `scripts/load_history.py` | Parquet | one-off backfill of the study period (`src/seismic_attention/config.py`, USGS, GDELT) for labels and training |
+| `/history/<table>/` | `scripts/load_history.py` | Parquet | one-off backfill of USGS and GDELT, 2024-01-01 – 2026-11-20, for labels, training and the exploratory analysis (labels use the study period of `src/seismic_attention/config.py`) |
 | `/checkpoints` | Spark Structured Streaming | – | streaming state |
 
 **Team convention for the raw zone:** one folder per UTC day, `date=YYYY-MM-DD`. Hive reads the folder name as the
@@ -28,6 +28,16 @@ after `MSCK REPAIR TABLE <table>` (the `create` commands of the scripts below ru
 | USGS | `/raw/usgs/date=.../usgs-<ingest time>-<id>-<updated>.json` (one event version per file, NiFi flow `nifi/flows/usgs.json`) | `usgs_raw` (nested, as received), view `usgs_raw_flat` (columns of `usgs_history`) | `hive/usgs.sql` (`scripts/hive_usgs.py create`) |
 | | `/history/usgs_history` | `usgs_history` | `scripts/load_history.py` |
 | Labels | `/curated/coverage_labels` (Parquet, one row per earthquake) | `coverage_labels` | `scripts/spark_coverage_labels.py` (rule: `src/seismic_attention/labels.py`) |
+| Bluesky stream | `/curated/bsky/stream_minute_parts_real_v1/batch_id=NNNNNNNN/` (Parquet, partial minute counts per micro-batch) | – (read by `scripts/compare_stream_batch.py`) | `scripts/spark_bsky_streaming.py` |
+| | `/checkpoints/bsky-minute-ms2-real-v1/` (Kafka offsets, deduplication state) | – | same |
+
+## Outside HDFS
+
+- **Kafka topics** `usgs`, `gdelt`, `bsky` (3 partitions each): one message per record, written by NiFi;
+  `usgs` is keyed by the event id. NiFi publishes in transactions, so consumers use `read_committed`.
+- **PostgreSQL** holds only the Hive metastore (table definitions), no project data.
+- **Planned (MS3):** the serving layer in Apache Cassandra, with batch views written by the Spark batch
+  jobs and real-time views written by Spark Structured Streaming; see [architecture.md](architecture.md).
 
 `<stamp>` is the time of the GDELT file, `yyyyMMddHHmmss` UTC (one file every 15 minutes).
 

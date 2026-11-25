@@ -1,4 +1,20 @@
+"""Spark Structured Streaming job: Kafka topic "bsky" -> per-minute counts of unique posts in HDFS.
 
+Run inside the Spark container (settings of the full 2024-2025 run, see docs/streaming.md):
+
+    docker compose exec spark-master /opt/spark/bin/spark-submit \\
+        --conf spark.sql.streaming.stateStore.providerClass=org.apache.spark.sql.execution.streaming.state.RocksDBStateStoreProvider \\
+        --conf spark.sql.streaming.stateStore.rocksdb.boundedMemoryUsage=true \\
+        --conf spark.sql.streaming.stateStore.rocksdb.maxMemoryUsageMB=256 \\
+        --conf spark.sql.shuffle.partitions=8 \\
+        /opt/app/scripts/spark_bsky_streaming.py
+
+Reads the topic from the earliest offset (read_committed, 20 000 offsets per micro-batch), processes
+what is available and stops (trigger availableNow). Every micro-batch writes its partial counts to
+OUTPUT_PATH/batch_id=NNNNNNNN; the checkpoint keeps the Kafka offsets and the deduplication state, so a
+restart with the same checkpoint does not count a post twice. For a new full replay use a new output
+path and a new checkpoint. Check against the batch job: scripts/compare_stream_batch.py.
+"""
 import sys
 from pathlib import Path
 
@@ -15,10 +31,10 @@ CHECKPOINT_PATH = "hdfs://namenode:9000/checkpoints/bsky-minute-ms2-real-v1"
 
 
 def process_batch(batch, batch_id):
+    """foreachBatch sink: minute counts of one micro-batch to its own folder (rerun overwrites it)."""
     minutes = minute_counts(batch)
 
     print(f"\nBatch {batch_id}")
-    #minutes.orderBy("minute").show(truncate=False)
 
     output = f"{OUTPUT_PATH}/batch_id={batch_id:08d}"
     minutes.write.mode("overwrite").parquet(output)

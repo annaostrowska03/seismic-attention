@@ -1,7 +1,8 @@
 # Bluesky data source
 
-Owner: Michał Kukla. Status: MS2. Control numbers and test results are filled in after the full
-2024–2025 run.
+Owner: Michał Kukla. Status: MS2, done: full 2024–2025 data downloaded, loaded and checked.
+Speed layer on the same data: [streaming.md](streaming.md). Other sources: [usgs.md](usgs.md),
+[gdelt.md](gdelt.md). All test IDs: [testing.md](testing.md).
 
 ## 1. What is collected
 
@@ -23,9 +24,11 @@ searchPosts API --(Python backfill)--> data/raw/bsky/YYYY-MM-DD.jsonl   (local, 
 ```
 
 **Why the download is in Python and not in NiFi.** The historical download needs a login token
-that is reused for hours, paging with a cursor, splitting busy time windows and resuming after an
-interruption. This is simple in Python and awkward in NiFi. NiFi takes over from the local files:
-it loads them into HDFS and Kafka, and it is the entry point for the replay demo.
+that is reused for hours (300 logins per day), paging with a cursor, splitting busy time windows,
+skipping only the part of a window on which the server keeps failing (section 9) and resuming after an
+interruption. This is simple in Python, where every case has a unit test (section 11), and would need
+custom scripted processors in NiFi. The download is a one-off step of the proof of concept. NiFi takes
+over from the local files: it loads them into HDFS and Kafka, which is the part repeated in the replay.
 
 ## 3. Acquisition
 
@@ -186,7 +189,8 @@ Source: `data/processed/bsky_summary.json` from the Spark job on HDFS.
 F = functional (automated, `pytest`), I = integration (pipeline run), Q = data quality.
 Automated tests run on every pull request (GitHub Actions) and locally with
 `python scripts/run_spark_tests.py`.
-Actual results: run of 2026-11-21 on the full 2024–2025 data (33/33 automated tests passed).
+Actual results: runs of 2026-11-21/22 on the full 2024–2025 data; the 33 Bluesky tests are part of the
+82 automated tests of the repository, all passed on 2026-11-25 ([test_evidence/pytest_all.txt](test_evidence/pytest_all.txt)).
 Logs and screenshots of the checks: [test_evidence/bluesky/](test_evidence/bluesky/README.md).
 
 | ID | Objective | Steps | Expected result | Actual result |
@@ -196,25 +200,25 @@ Logs and screenshots of the checks: [test_evidence/bluesky/](test_evidence/blues
 | BSKY-F-03 | Temporary errors are retried, but not forever | `test_401_triggers_relogin_and_retry`, `test_429_waits_retry_after_then_retries`, `test_5xx_retries_with_backoff`, `test_retries_are_bounded` | re-login on 401, waits on 429/5xx, gives up after 8 attempts | passed |
 | BSKY-F-04 | Client slows down before hitting the rate limit | `test_low_remaining_rate_limit_backs_off` | waits until the limit resets | passed |
 | BSKY-F-05 | All result pages are read; a full window is detected | `test_fetch_follows_cursor_and_sends_window`, `test_fetch_reports_capped_when_page_limit_reached` | pages followed by cursor; `capped` when the page limit is reached | passed |
-| BSKY-F-06 | Only the agreed fields are stored, no profile data | `test_slim_keeps_schema_and_drops_profile_data` | exactly the 10 fields of section 4 | passed |
+| BSKY-F-06 | Only the agreed fields are stored, no profile data, in the file of the window's day | `test_slim_keeps_schema_and_drops_profile_data`, `test_daily_files_use_window_start_date` | exactly the 10 fields of section 4; posts go to the daily file of the window start | passed |
 | BSKY-F-07 | Busy windows are split, halves before parent | `test_window_is_split_until_it_fits` | two 30-min halves, parent marked done last | passed |
-| BSKY-F-08 | A new run downloads only what is missing | `test_finished_windows_are_skipped_on_resume`, `test_window_covered_by_smaller_finished_windows_is_not_fetched`, `test_only_the_half_with_a_gap_is_fetched`, `test_pending_windows_count_coverage_not_exact_keys` | covered windows skipped, also with a different window size | passed |
+| BSKY-F-08 | A new run downloads only what is missing | `test_finished_windows_are_skipped_on_resume`, `test_window_covered_by_smaller_finished_windows_is_not_fetched`, `test_only_the_half_with_a_gap_is_fetched`, `test_pending_windows_count_coverage_not_exact_keys`, `test_done_log_ignores_blank_and_malformed_lines` | covered windows skipped, also with a different window size; a damaged line in `_done.txt` is ignored | passed |
 | BSKY-F-09 | Download survives network errors | `test_backfill_retries_window_after_network_error` | waits and retries the window | passed |
 | BSKY-F-10 | A window on which the server keeps failing does not stop the download | `test_server_errors_split_the_window_and_skip_only_the_failing_minute`, `test_backfill_stops_when_many_windows_fail` | window split; only the failing part (≤ 1 min) skipped and still pending; run stops after more than 5 such parts | passed |
-| BSKY-F-11 | Raw reading ignores other files and keeps broken lines visible | `test_read_raw_ignores_other_files_and_counts_corrupt_lines`, `test_read_raw_finds_files_in_hdfs_style_partition_dirs` | only `*.jsonl` read; corrupt line counted | passed |
+| BSKY-F-11 | Raw reading ignores other files and keeps broken lines visible | `test_read_raw_ignores_other_files_and_counts_corrupt_lines`, `test_read_raw_finds_files_in_hdfs_style_partition_dirs` | only `*.jsonl` read, also in `date=` folders; corrupt line counted | passed |
 | BSKY-F-12 | Duplicates are removed by `uri` | `test_duplicates_are_removed_by_uri_and_earliest_file_wins` | one row per post, `n_copies` correct | passed |
 | BSKY-F-13 | Event time rule at its boundaries | `test_t_event_rule`, `test_in_period_uses_t_event` | 5 min tolerance exact; bad dates fall back to `indexedAt` | passed |
 | BSKY-F-14 | `reindexed` and `is_clean` thresholds | `test_reindexed_threshold_is_strictly_more_than_one_day`, `test_clean_lag_window_is_minus5_to_plus10_minutes` | > 1 day; −5…+10 min inclusive | passed |
 | BSKY-F-15 | Keyword columns; exclusions only flag | `test_unrelated_candidate_is_a_flag_only`, `test_matched_keywords`, `test_keyword_config_loads` | flags correct, no rows removed | passed |
 | BSKY-F-16 | Per-minute table and control numbers | `test_minute_counts_are_dense_and_count_authors`, `test_summary_control_numbers` | every minute present; counts correct | passed |
-| BSKY-I-01 | Docker stack is healthy | `python scripts/smoke_test.py` | all services OK | all 6 services OK |
-| BSKY-I-02 | NiFi loads every file into HDFS unchanged | run the flow, then `python scripts/verify_bsky_ingest.py` (HDFS checks) | same files and sizes as `data/raw/bsky`, in `date=` folders | 731 = 731 files, 1,035,464,899 bytes each side, 0 misplaced |
-| BSKY-I-03 | NiFi publishes every post to Kafka | `python scripts/verify_bsky_ingest.py` (Kafka checks: `read_committed` count, JSON parse) | messages = local lines; 0 invalid | 1,973,106 = 1,973,106; 0 invalid |
-| BSKY-I-04 | Spark job processes the HDFS data | run the job (section 7, step 3) | finishes; summary file written | finished in 141 s; summary written |
-| BSKY-I-05 | Hive shows the same data as Spark | `python scripts/hive_bsky.py verify` | 8/8 checks OK | 8/8 OK |
-| BSKY-I-06 | All tests pass in CI | GitHub Actions run on the pull request | all passed, none skipped | passed (run #11 of PR #5; the job fails on any skipped test) |
+| ENV-I-01 | Docker stack is healthy | `python scripts/smoke_test.py` | all services OK | all 6 services OK |
+| BSKY-I-01 | NiFi loads every file into HDFS unchanged | run the flow, then `python scripts/verify_bsky_ingest.py` (HDFS checks) | same files and sizes as `data/raw/bsky`, in `date=` folders | 731 = 731 files, 1,035,464,899 bytes each side, 0 misplaced |
+| BSKY-I-02 | NiFi publishes every post to Kafka | `python scripts/verify_bsky_ingest.py` (Kafka checks: `read_committed` count, JSON parse) | messages = local lines; 0 invalid | 1,973,106 = 1,973,106; 0 invalid |
+| BSKY-I-03 | Spark job processes the HDFS data | run the job (section 7, step 3) | finishes; summary file written | finished in 141 s; summary written |
+| BSKY-I-04 | Hive shows the same data as Spark | `python scripts/hive_bsky.py verify` | 8/8 checks OK | 8/8 OK |
+| CI-02 | All tests pass in CI | GitHub Actions run on the pull request | all passed, none skipped | passed (run #11 of PR #5; on `main` runs #26 and #28; the job fails on any skipped test) |
 | BSKY-Q-01 | Raw files are readable | `corrupt_rows` in the summary | 0 | 0 |
 | BSKY-Q-02 | Every day of the period was downloaded | `--dry-run`; `raw_files` in the summary | 0 pending windows, except the known gap (section 9); 731 daily files | 0 pending except the known gap (earthquake 1, quake 1); 731 files |
 | BSKY-Q-03 | Posts are unique after cleaning | Hive: `count(DISTINCT uri)` = `count(*)` on `bsky_posts` | equal | 1,371,078 = 1,371,078 |
-| BSKY-Q-04 | Per-minute table is complete and consistent | Hive: rows of `bsky_minute`; sum of `n_posts` | 1 052 640 rows; sum = posts in period | 1,052,640 rows; sum 1,370,530 = posts in period |
+| BSKY-Q-04 | Per-minute table is complete and consistent | Hive: rows of `bsky_minute`; sum of `n_posts` | 1,052,640 rows; sum = posts in period | 1,052,640 rows; sum 1,370,530 = posts in period |
 | BSKY-Q-05 | Server timestamps are always valid | `unparsable_indexed_at` in the summary | 0 | 0 |

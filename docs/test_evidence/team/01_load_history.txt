@@ -1,4 +1,4 @@
-Test cases: USGS-I-01, GDELT-I-01
+Test cases: HIST-I-03 (and the row counts of the local files used by HIST-Q-01)
 Command:    docker compose exec spark-master /opt/spark/bin/spark-submit /opt/app/scripts/load_history.py
 Run at:     2026-11-22 23:12:28 (local time)
 ------------------------------------------------------------------------
